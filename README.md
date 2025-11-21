@@ -33,7 +33,7 @@ uv run streamlit run streamlit_app.py
 
 - 🤖 **Autonomous Agent**: LangGraph-powered agent that continuously monitors environmental sensors
 - 📊 **Interactive Dashboard**: Streamlit UI with map-based visualization of incidents, sensors, and permits
-- 🔌 **MCP Server**: Model Context Protocol server exposing EA APIs as structured tools
+- 🔌 **MCP Integration**: Dual approach with LangChain @tool decorators for agents + FastMCP server for external clients
 - 🌊 **Real-time Data**: Integrates Flood Monitoring, Hydrology, and Public Registers APIs
 - 🚨 **Anomaly Detection**: Statistical z-score based detection with configurable thresholds
 - 🧠 **LLM-Powered Analysis**: OpenAI-driven incident summarization and prioritization
@@ -118,7 +118,12 @@ Before you begin, make sure you have:
    cd ..
    ```
    
-   **Note**: On some systems you may need `sudo`. If you get permission errors, add your user to the docker group:
+   **Note**: If you get a permission error, you may need to use `sudo`:
+   ```bash
+   sudo docker compose up -d mongo postgres
+   ```
+   
+   Or add your user to the docker group (requires logout/login):
    ```bash
    sudo usermod -aG docker $USER
    newgrp docker
@@ -163,8 +168,8 @@ Verify your setup is working:
 # 1. Check databases are running
 docker ps | grep -E "mongo|postgres"
 
-# 2. Test the flood API client
-uv run python scripts/test_flood_client.py
+# 2. Test the anomaly detection workflow
+uv run python scripts/test_anomaly_flow.py
 
 # 3. Run the agent and check for errors
 uv run defra-agent-run
@@ -174,10 +179,10 @@ uv run streamlit run streamlit_app.py
 ```
 
 You should see:
-- ✅ Two Docker containers running
-- ✅ Flood API returns JSON data
-- ✅ Agent completes without errors
-- ✅ Dashboard shows at least one incident
+- ✅ Two Docker containers running (mongo and postgres)
+- ✅ Test script fetches readings and generates alerts
+- ✅ Agent completes without errors and stores incident
+- ✅ Dashboard shows at least one incident on the map
 
 ### Docker Setup
 
@@ -249,24 +254,43 @@ Run the entire application stack (agent + databases) using Docker Compose:
 └──────────┘  └──────────────┘  └─────────────────┘
 ```
 
-### MCP Server
+### MCP Integration
 
-The project includes a Model Context Protocol server (`mcp_servers/ea_env_server.py`) that exposes:
+The project demonstrates **two approaches** to MCP (Model Context Protocol):
 
-- **`get_flood_readings`**: Fetch flood monitoring data by location (lat/lon + radius)
-  - Returns stations and latest readings within search area
-  - Filters by parameter (level, flow, etc.)
+#### 1. LangChain Tools (Recommended for LangGraph agents)
+
+Location: `src/defra_agent/tools/mcp_tools.py`
+
+These are `@tool` decorated functions that can be called directly by LangGraph agents:
+
+- **`get_flood_readings`**: Fetch latest flood monitoring readings
+  - Parameter: `parameter` (e.g., 'level', 'flow')
+  - Returns: List of readings with station IDs, values, timestamps
   
-- **`get_hydrology_stations`**: Find hydrology stations (flow, groundwater, water level)
-  - Search by location and observed property
-  - Returns detailed station metadata
+- **`get_hydrology_readings`**: Fetch latest hydrology readings
+  - Parameter: `observed_property` (e.g., 'waterLevel', 'waterFlow')
+  - Returns: List of readings with station IDs, values, timestamps
   
 - **`search_public_registers`**: Search environmental permits by location
-  - Uses postcode + easting/northing + radius
-  - Returns CSV data converted to JSON
-  - Includes operator details, permit types, site addresses
+  - Parameters: `postcode`, `easting`, `northing`, `dist_km`
+  - Returns: List of permit entries with operator details
 
-This allows the agent (or other MCP-compatible clients) to interact with EA APIs through structured tool interfaces. The server uses FastMCP and can be run standalone or integrated into MCP-compatible applications.
+**Usage**: These tools are integrated into the agent graph via `ToolNode` for intelligent, LLM-driven data retrieval.
+
+**Test**: `uv run python scripts/test_mcp_tools.py`
+
+#### 2. FastMCP Server (For external MCP clients)
+
+Location: `mcp_servers/ea_env_server.py`
+
+A standalone MCP server using FastMCP protocol that exposes the same tools via stdio/HTTP for external clients like Claude Desktop.
+
+**Run**: `uv run python mcp_servers/ea_env_server.py`
+
+**Test**: `uv run python scripts/test_mcp_server.py`
+
+See `docs/MCP_INTEGRATION.md` for detailed architecture and usage patterns.
 
 ## What It Does
 
@@ -333,7 +357,10 @@ The Streamlit dashboard (`streamlit_app.py`) provides:
 ### Running Tests
 
 ```bash
-# Run all tests
+# Install dev dependencies first (includes pytest)
+uv sync --extra dev
+
+# Run all tests (currently limited test coverage)
 uv run pytest
 
 # Run specific test file
@@ -341,6 +368,10 @@ uv run pytest tests/test_flood_client.py -v
 
 # Run with coverage
 uv run pytest --cov=src
+
+# Run script-based tests (more comprehensive, no dev deps needed)
+uv run python scripts/test_anomaly_flow.py
+uv run python scripts/test_mcp_tools.py
 ```
 
 ### Code Quality
@@ -361,13 +392,22 @@ uv run mypy src
 ```
 ├── src/defra_agent/
 │   ├── agent/          # LangGraph agent logic and workflow orchestration
+│   │   ├── graph.py          # Standard detection cycle graph
+│   │   └── mcp_graph.py      # Enhanced graph with MCP tools
 │   ├── domain/         # Core models (Reading, Alert, Incident, AnomalyDetector)
 │   ├── services/       # Business logic (anomaly detection, summarization)
 │   ├── storage/        # MongoDB and pgvector repositories
-│   ├── tools/          # API clients (flood, hydrology, permits)
+│   ├── tools/          # API clients and MCP tools
+│   │   ├── flood_client.py         # Direct Flood API client
+│   │   ├── hydrology_client.py     # Direct Hydrology API client
+│   │   ├── public_registers_client.py  # Direct Public Registers client
+│   │   └── mcp_tools.py            # LangChain @tool decorators for agent
 │   └── config.py       # Pydantic settings and environment configuration
 ├── mcp_servers/
-│   └── ea_env_server.py  # MCP server exposing EA APIs as structured tools
+│   ├── ea_env_server.py  # FastMCP server for external clients
+│   └── README.md         # MCP server documentation
+├── docs/
+│   └── MCP_INTEGRATION.md  # MCP architecture and usage guide
 ├── scripts/            # Development and test scripts
 ├── tests/              # Unit tests
 ├── infra/              # Docker Compose and database initialization
@@ -446,17 +486,23 @@ uv run streamlit run streamlit_app.py
 
 ### Test individual components
 ```bash
-# Test flood API client
-uv run python scripts/test_flood_client.py
-
-# Test anomaly detection workflow
+# Test anomaly detection workflow (generates alerts from flood data)
 uv run python scripts/test_anomaly_flow.py
 
-# Test incident service
-uv run python scripts/test_incident_service.py
+# Test flood and hydrology API integration with permits
+uv run python scripts/test_flood_hydro_permits.py
 
 # Test hydrology client
 uv run python scripts/test_hydrology_client.py
+
+# Test incident service end-to-end
+uv run python scripts/test_incident_service.py
+
+# Test MCP tools (LangChain @tool integration)
+uv run python scripts/test_mcp_tools.py
+
+# Test MCP server directly
+uv run python scripts/test_mcp_server.py
 
 # Sync monitoring stations to database
 uv run python scripts/sync_stations.py

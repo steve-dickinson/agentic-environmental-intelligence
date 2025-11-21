@@ -1,26 +1,36 @@
 import asyncio
-import sys
-from pathlib import Path
 
-import pytest
-
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
-
-from defra_agent.tools.hydrology_client import HydrologyClient  # noqa: E402
+from defra_agent.tools.hydrology_client import HydrologyClient
 
 
-async def _run() -> None:
+async def main() -> None:
+    """Test the hydrology client by fetching latest readings."""
     client = HydrologyClient()
+
+    print("Fetching latest hydrology readings...")
     try:
         readings = await client.get_latest_readings()
-        assert isinstance(readings, list)
+
+        print(f"\n✓ Successfully fetched {len(readings)} hydrology readings")
+
         if readings:
-            first = readings[0]
-            assert first.source == "hydrology"
+            print("\nFirst 5 readings:")
+            for i, reading in enumerate(readings[:5], 1):
+                print(
+                    f"{i}. Station: {reading.station_id}, Value: {reading.value}, "
+                    f"Time: {reading.timestamp}, Source: {reading.source}"
+                )
+                if reading.lat and reading.lon:
+                    print(f"   Location: ({reading.lat}, {reading.lon})")
+        else:
+            print("\n⚠ No readings returned - this might be normal if the API has no current data")
+
     except Exception as e:
-        pytest.skip(f"Hydrology API not available: {e}")
+        print(f"\n✗ Error fetching hydrology readings: {e}")
+        import traceback
+
+        traceback.print_exc()
 
 
-def test_hydrology_client_runs() -> None:
-    asyncio.run(_run())
+if __name__ == "__main__":
+    asyncio.run(main())

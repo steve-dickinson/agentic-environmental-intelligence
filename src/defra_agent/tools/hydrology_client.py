@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Any
 
 import httpx
 
@@ -30,7 +29,7 @@ class HydrologyClient:
                     print(f"Failed to fetch hydrology readings after {max_retries} attempts: {e}")
                     return []
                 print(f"Attempt {attempt + 1} failed, retrying...")
-                await __import__('asyncio').sleep(2 ** attempt)
+                await __import__("asyncio").sleep(2**attempt)
         else:
             return []
 
@@ -38,20 +37,38 @@ class HydrologyClient:
 
         station_ids: set[str] = set()
         for item in raw_items:
-            station = item.get("stationReference") or item.get("stationGuid")
-            if station:
-                station_ids.add(str(station))
+            measure = item.get("measure", "")
+
+            if isinstance(measure, dict):
+                measure_url = measure.get("@id", "")
+            else:
+                measure_url = str(measure) if measure else ""
+
+            if measure_url:
+                measure_id = measure_url.split("/")[-1]
+
+                parts = measure_id.split("-")
+                if parts:
+                    station_ids.add(parts[0])
 
         readings: list[Reading] = []
         for item in raw_items:
             value = item.get("value")
-            station = item.get("stationReference") or item.get("stationGuid")
             timestamp = item.get("dateTime")
+            measure = item.get("measure", "")
 
-            if value is None or station is None or timestamp is None:
+            if isinstance(measure, dict):
+                measure_url = measure.get("@id", "")
+            else:
+                measure_url = str(measure) if measure else ""
+
+            if value is None or timestamp is None or not measure_url:
                 continue
 
-            meta = self._station_repo.get_station("hydrology", str(station)) or {}
+            measure_id = measure_url.split("/")[-1]
+            station_id = measure_id.split("-")[0]
+
+            meta = self._station_repo.get_station("hydrology", str(station_id)) or {}
             easting = meta.get("easting")
             northing = meta.get("northing")
             lat = meta.get("lat")
@@ -59,7 +76,7 @@ class HydrologyClient:
 
             readings.append(
                 Reading(
-                    station_id=str(station),
+                    station_id=station_id,
                     value=float(value),
                     timestamp=datetime.fromisoformat(str(timestamp)),
                     source="hydrology",

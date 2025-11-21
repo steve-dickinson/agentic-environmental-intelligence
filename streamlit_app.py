@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any, Dict, List
+from typing import Any
 
 import httpx
 import pandas as pd
@@ -11,7 +11,6 @@ import streamlit as st
 from pymongo import MongoClient
 
 from defra_agent.config import settings
-
 
 # ---------- Mongo connection ----------
 
@@ -30,14 +29,14 @@ def get_incidents_collection():
 # ---------- Incident & readings helpers ----------
 
 
-def load_all_incidents() -> List[Dict[str, Any]]:
+def load_all_incidents() -> list[dict[str, Any]]:
     """Fetch all incidents from Mongo, newest first."""
     coll = get_incidents_collection()
     docs = list(coll.find().sort("_id", -1))
     return docs
 
 
-def compute_incident_summary(doc: Dict[str, Any]) -> Dict[str, Any]:
+def compute_incident_summary(doc: dict[str, Any]) -> dict[str, Any]:
     """Compute simple summary stats for an incident document."""
     readings = doc.get("readings", [])
     alerts = doc.get("alerts", [])
@@ -69,9 +68,9 @@ def compute_incident_summary(doc: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_incident_options(docs: List[Dict[str, Any]]) -> List[str]:
+def build_incident_options(docs: list[dict[str, Any]]) -> list[str]:
     """Build human-readable labels for the incident select box."""
-    options: List[str] = []
+    options: list[str] = []
     for doc in docs:
         summary = compute_incident_summary(doc)
         label_parts = [f"{doc['_id'][:8]}…"]
@@ -86,9 +85,9 @@ def build_incident_options(docs: List[Dict[str, Any]]) -> List[str]:
 
 
 def build_station_priority_map(
-    alerts: List[Dict[str, Any]],
-    readings: List[Dict[str, Any]],
-) -> Dict[str, str]:
+    alerts: list[dict[str, Any]],
+    readings: list[dict[str, Any]],
+) -> dict[str, str]:
     """
     Infer a priority per station_id by scanning alert text.
 
@@ -97,16 +96,14 @@ def build_station_priority_map(
     """
     order = {"high": 3, "medium": 2, "low": 1}
     station_ids = {r.get("station_id") for r in readings if r.get("station_id")}
-    station_priority: Dict[str, str] = {}
+    station_priority: dict[str, str] = {}
 
     for alert in alerts:
         priority = alert.get("priority")
         if priority not in order:
             continue
         score = order[priority]
-        text = (alert.get("summary") or "") + " " + " ".join(
-            alert.get("suggested_actions") or []
-        )
+        text = (alert.get("summary") or "") + " " + " ".join(alert.get("suggested_actions") or [])
         for sid in station_ids:
             if sid and sid in text:
                 prev = station_priority.get(sid)
@@ -118,8 +115,8 @@ def build_station_priority_map(
 
 
 def build_readings_dataframe(
-    readings: List[Dict[str, Any]],
-    station_priority: Dict[str, str],
+    readings: list[dict[str, Any]],
+    station_priority: dict[str, str],
 ) -> pd.DataFrame:
     """
     Convert readings from Mongo into a DataFrame with lat/lon for mapping.
@@ -150,7 +147,7 @@ def build_readings_dataframe(
             ]
         )
 
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
 
     for r in readings:
         lat = r.get("lat")
@@ -211,7 +208,7 @@ def build_readings_dataframe(
 
 
 @st.cache_data(show_spinner=False)
-def geocode_postcode(postcode: str) -> Dict[str, float] | None:
+def geocode_postcode(postcode: str) -> dict[str, float] | None:
     """
     Very simple geocoder using postcodes.io for PoC purposes.
 
@@ -242,7 +239,7 @@ def geocode_postcode(postcode: str) -> Dict[str, float] | None:
 
 
 def build_permits_dataframe_with_coords(
-    permits: List[Dict[str, Any]],
+    permits: list[dict[str, Any]],
 ) -> pd.DataFrame:
     """
     Convert permits from Mongo into a DataFrame with lat/lon using postcode geocoding.
@@ -267,7 +264,7 @@ def build_permits_dataframe_with_coords(
             ]
         )
 
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
 
     for p in permits:
         postcode = p.get("site_postcode")
@@ -289,9 +286,7 @@ def build_permits_dataframe_with_coords(
         else:
             dist_str = "distance: n/a"
 
-        timestamp_str = " | ".join(
-            [part for part in [postcode, dist_str] if part]
-        )
+        timestamp_str = " | ".join([part for part in [postcode, dist_str] if part])
 
         row = {
             "lat": geo["lat"],
@@ -302,10 +297,10 @@ def build_permits_dataframe_with_coords(
             "registration_type": reg_type,
             "distance_km": dist,
             # Aliases for the shared tooltip template
-            "station_id": operator,             # shows as bold title
-            "priority": "permit",               # shows 'permit' as the "priority"
-            "value": reg_type or reg_label,     # shows type/label as 'value'
-            "timestamp": timestamp_str,         # shows postcode + distance
+            "station_id": operator,  # shows as bold title
+            "priority": "permit",  # shows 'permit' as the "priority"
+            "value": reg_type or reg_label,  # shows type/label as 'value'
+            "timestamp": timestamp_str,  # shows postcode + distance
         }
         rows.append(row)
 
@@ -424,7 +419,7 @@ def main() -> None:
                 center_lon = df_permits_geo["lon"].mean()
 
             # --- Sensor points coloured by alert priority ---
-            def priority_color(priority: str) -> List[int]:
+            def priority_color(priority: str) -> list[int]:
                 if priority == "high":
                     return [220, 20, 60]  # red
                 if priority == "medium":
@@ -441,7 +436,7 @@ def main() -> None:
                     "ScatterplotLayer",
                     data=df_readings,
                     get_position="[lon, lat]",
-                    get_radius=1200,          # bigger markers for stations
+                    get_radius=1200,  # bigger markers for stations
                     get_fill_color="color",
                     pickable=True,
                 )
@@ -450,15 +445,13 @@ def main() -> None:
             permit_layer = None
             if not df_permits_geo.empty:
                 # Smaller purple-ish markers for permits
-                df_permits_geo["color"] = [
-                    [138, 43, 226] for _ in range(len(df_permits_geo))
-                ]
+                df_permits_geo["color"] = [[138, 43, 226] for _ in range(len(df_permits_geo))]
 
                 permit_layer = pdk.Layer(
                     "ScatterplotLayer",
                     data=df_permits_geo,
                     get_position="[lon, lat]",
-                    get_radius=400,          # smaller markers for permits
+                    get_radius=400,  # smaller markers for permits
                     get_fill_color="color",
                     pickable=True,
                 )
@@ -480,7 +473,7 @@ def main() -> None:
             )
 
             # IMPORTANT: permits first, stations second → stations render on top
-            layers: List[pdk.Layer] = []
+            layers: list[pdk.Layer] = []
             if permit_layer is not None:
                 layers.append(permit_layer)
             if sensor_layer is not None:
@@ -519,9 +512,7 @@ def main() -> None:
             st.markdown("---")
             st.markdown("**All alerts for this incident:**")
             for a in ordered:
-                st.markdown(
-                    f"- `[{a.get('priority', 'n/a')}]` {a.get('summary', '')}"
-                )
+                st.markdown(f"- `[{a.get('priority', 'n/a')}]` {a.get('summary', '')}")
         else:
             st.info("No alerts recorded – no significant anomalies were found.")
 
@@ -545,8 +536,7 @@ def main() -> None:
             permits_df["category"] = permits_df.apply(classify, axis=1)
 
             within_1km = permits_df[
-                (permits_df["distance_km"].notna())
-                & (permits_df["distance_km"] <= 1.0)
+                (permits_df["distance_km"].notna()) & (permits_df["distance_km"] <= 1.0)
             ]
 
             st.write(

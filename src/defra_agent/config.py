@@ -1,3 +1,5 @@
+import os
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,3 +22,7 @@ class Settings(BaseSettings):  # type: ignore[misc]
 
 
 settings = Settings()
+
+# Ensure OPENAI_API_KEY is set in environment for OpenAI SDK
+if settings.openai_api_key and not os.environ.get("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = settings.openai_api_key
