@@ -29,3 +29,9 @@ services:
     depends_on:
       - mongo
       - postgres
+
+  mcp-ea-env:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.mcp_ea_env
+    restart: unless-stopped

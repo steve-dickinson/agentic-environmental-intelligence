@@ -9,6 +9,10 @@ class Reading:
     value: float
     timestamp: datetime
     source: str | None = None
+    easting: int | None = None
+    northing: int | None = None
+    lat: float | None = None
+    lon: float | None = None
 
 
 class AlertPriority(str, Enum):
@@ -28,11 +32,11 @@ class Alert:
 class Permit:
     permit_id: str
     operator_name: str
-    activity: str | None = None
-    location: str | None = None
-    easting: float | None = None
-    northing: float | None = None
-
+    register_label: str | None = None
+    registration_type: str | None = None
+    site_address: str | None = None
+    site_postcode: str | None = None
+    distance_km: float | None = None
 
 @dataclass
 class Incident:

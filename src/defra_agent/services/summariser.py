@@ -4,7 +4,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, SecretStr
 
 from defra_agent.config import settings
-from defra_agent.domain.models import Alert, AlertPriority, Reading
+from defra_agent.domain.models import Alert, AlertPriority, Permit, Reading
 
 
 class AlertSchema(BaseModel):  # type: ignore[misc]
@@ -34,7 +34,7 @@ class AlertSummariser:
 
         self._llm = llm.with_structured_output(AlertsResponse)
 
-    async def summarise(self, anomalies: list[Reading]) -> list[Alert]:
+    async def summarise(self, anomalies: list[Reading], permits: list[Permit] | None = None) -> list[Alert]:
         if not anomalies:
             return []
 
@@ -46,7 +46,17 @@ class AlertSummariser:
             for a in anomalies
         )
 
+        permits_text = ""
+        if permits:
+            permits_text = "\n\nNearby registered sites:\n" + "\n".join(
+                f"- {p.operator_name} ({p.registration_type}) at {p.site_address or 'Unknown'}, "
+                f"Distance: {p.distance_km:.2f}km"
+                for p in permits
+            )
+
         print("Anomalies text for LLM:", anomalies_text)
+        if permits_text:
+            print("Permits text:", permits_text)
 
         prompt = (
             "You are an internal environmental risk analyst.\n"
@@ -54,7 +64,8 @@ class AlertSummariser:
             "Do NOT make assumptions or add information not present in the data.\n\n"
             "Analyze these environmental anomalies and generate alerts.\n"
             "Each reading includes: Source (data type), Station ID, Timestamp, and Value.\n\n"
-            f"{anomalies_text}\n\n"
+            f"{anomalies_text}\n"
+            f"{permits_text}\n\n"
             "For each alert:\n"
             "- Summarize ONLY what is observable from the provided anomaly data\n"
             "- Consider the Source type (e.g., 'flood' for water levels, 'hydrology' for flows)\n"

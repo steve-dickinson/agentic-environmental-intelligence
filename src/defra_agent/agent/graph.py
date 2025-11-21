@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from typing import Any, TypedDict
+from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
@@ -10,23 +10,25 @@ from defra_agent.storage.mongo_repo import IncidentRepository
 from defra_agent.storage.pgvector_repo import IncidentVectorRepository
 from defra_agent.tools.flood_client import FloodClient
 from defra_agent.tools.hydrology_client import HydrologyClient
+from defra_agent.tools.public_registers_client import PublicRegistersClient
 
 
-class GraphState(TypedDict):
-    """Simple state mapping to hold the incident for this run."""
-
+class GraphState(dict):
     incident: Incident | None
 
 
 def build_incident_service() -> IncidentService:
     flood_client = FloodClient()
     hydrology_client = HydrologyClient()
+    public_registers_client = PublicRegistersClient()
     summariser = AlertSummariser()
     incident_repo = IncidentRepository()
     vector_repo = IncidentVectorRepository()
+
     return IncidentService(
         flood_client=flood_client,
         hydrology_client=hydrology_client,
+        public_registers_client=public_registers_client,
         summariser=summariser,
         incident_repo=incident_repo,
         vector_repo=vector_repo,
@@ -45,7 +47,6 @@ async def run_cycle(state: GraphState) -> GraphState:
 
 
 def build_graph() -> Any:
-    """Build and compile the LangGraph state graph."""
     graph = StateGraph(GraphState)
     graph.add_node("init", init_state)
     graph.add_node("run_cycle", run_cycle)
@@ -53,3 +54,4 @@ def build_graph() -> Any:
     graph.add_edge("init", "run_cycle")
     graph.add_edge("run_cycle", END)
     return graph.compile()
+

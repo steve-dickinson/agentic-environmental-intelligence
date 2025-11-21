@@ -14,7 +14,7 @@ class Settings(BaseSettings):  # type: ignore[misc]
 
     anomaly_threshold: float = 3.0
 
-    public_registers_base_url: str = "https://environment.data.gov.uk/public-register"
+    public_registers_dist_km: int = 3
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

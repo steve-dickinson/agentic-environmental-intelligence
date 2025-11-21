@@ -1,0 +1,22 @@
+FROM python:3.12-slim
+
+ENV UV_SYSTEM_PYTHON=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+COPY pyproject.toml ./
+COPY uv.lock ./ || true
+
+RUN uv sync --no-dev --frozen
+
+COPY mcp_servers ./mcp_servers
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+CMD ["uv", "run", "python", "mcp_servers/ea_env_server.py"]
