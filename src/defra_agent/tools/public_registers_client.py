@@ -1,4 +1,3 @@
-
 import csv
 import io
 
@@ -17,7 +16,6 @@ class PublicRegistersClient:
         northing: int,
         dist_km: int | None = None,
     ) -> list[Permit]:
-
         radius = dist_km or settings.public_registers_dist_km
 
         params = {
@@ -70,3 +68,32 @@ class PublicRegistersClient:
             )
 
         return permits
+
+    async def search_by_coordinates(
+        self,
+        easting: int,
+        northing: int,
+        dist_km: float = 1.0,
+    ) -> list[dict]:
+        """Search for permits by coordinates, returning raw dict format.
+
+        This is used by the clustering workflow to get permits per cluster.
+        """
+        permits = await self.fetch_permits_for_location(easting, northing, int(dist_km))
+
+        # Convert Permit objects back to dicts for consistency with MCP tool format
+        result = []
+        for permit in permits:
+            result.append(
+                {
+                    "registrationNumber": permit.permit_id,
+                    "holder.name": permit.operator_name,
+                    "register.label": permit.register_label,
+                    "registrationType.label": permit.registration_type,
+                    "site.siteAddress.address": permit.site_address,
+                    "site.siteAddress.postcode": permit.site_postcode,
+                    "distance": str(permit.distance_km) if permit.distance_km else None,
+                }
+            )
+
+        return result

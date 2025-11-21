@@ -30,9 +30,20 @@ def get_incidents_collection():
 
 
 def load_all_incidents() -> list[dict[str, Any]]:
-    """Fetch all incidents from Mongo, newest first."""
+    """Fetch all incidents from Mongo, sorted by priority (high first) then by time."""
     coll = get_incidents_collection()
     docs = list(coll.find().sort("_id", -1))
+
+    # Sort by priority: high > medium > low, then by time (newest first)
+    priority_order = {"high": 3, "medium": 2, "low": 1}
+
+    def sort_key(doc: dict[str, Any]) -> tuple[int, float]:
+        summary = compute_incident_summary(doc)
+        priority_score = priority_order.get(summary["highest_priority"], 0)
+        time_score = summary["time"].timestamp() if summary["time"] else 0
+        return (-priority_score, -time_score)  # Negative for descending order
+
+    docs.sort(key=sort_key)
     return docs
 
 
@@ -71,15 +82,43 @@ def compute_incident_summary(doc: dict[str, Any]) -> dict[str, Any]:
 def build_incident_options(docs: list[dict[str, Any]]) -> list[str]:
     """Build human-readable labels for the incident select box."""
     options: list[str] = []
-    for doc in docs:
+    for idx, doc in enumerate(docs, 1):
         summary = compute_incident_summary(doc)
-        label_parts = [f"{doc['_id'][:8]}…"]
+        readings = doc.get("readings", [])
+
+        # Get station names and location
+        station_ids = list({r.get("station_id") for r in readings if r.get("station_id")})[:2]
+        station_text = ", ".join(station_ids) if station_ids else "Unknown location"
+
+        # Get first reading's approximate location
+        location_text = ""
+        if readings and readings[0].get("lat") and readings[0].get("lon"):
+            lat = readings[0]["lat"]
+            lon = readings[0]["lon"]
+            location_text = f"({lat:.2f}, {lon:.2f})"
+
+        # Priority emoji
+        priority_emoji = {
+            "high": "🔴",
+            "medium": "🟠",
+            "low": "🟡",
+        }.get(summary["highest_priority"], "ℹ️")
+
+        # Build readable label
+        label_parts = [
+            f"#{idx}",
+            priority_emoji,
+            summary["highest_priority"] or "info",
+            f"@ {station_text}",
+        ]
+
+        if location_text:
+            label_parts.append(location_text)
+
         if summary["time"]:
-            label_parts.append(summary["time"].strftime("%Y-%m-%d %H:%M"))
-        if summary["highest_priority"]:
-            label_parts.append(f"{summary['highest_priority']}")
-        label_parts.append(f"{summary['reading_count']} readings")
-        label = " | ".join(label_parts)
+            label_parts.append(summary["time"].strftime("%H:%M"))
+
+        label = " ".join(label_parts)
         options.append(label)
     return options
 
@@ -169,8 +208,10 @@ def build_readings_dataframe(
 
         try:
             timestamp = pd.to_datetime(ts_str)
+            timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M") if pd.notna(timestamp) else "n/a"
         except Exception:
             timestamp = pd.NaT
+            timestamp_str = "n/a"
 
         priority = station_priority.get(station_id, "none")
 
@@ -180,9 +221,10 @@ def build_readings_dataframe(
                 "lon": lon_f,
                 "station_id": station_id,
                 "source": source,
-                "value": value,
+                "value": f"{value:.2f}" if value is not None else "n/a",
                 "timestamp": timestamp,
-                "priority": priority,
+                "timestamp_str": timestamp_str,
+                "priority": priority.upper(),
             },
         )
 
@@ -280,13 +322,14 @@ def build_permits_dataframe_with_coords(
         # Build a readable "timestamp" surrogate for the tooltip
         if dist is not None:
             try:
-                dist_str = f"{float(dist):.2f} km"
+                dist_str = f"{float(dist):.2f} km away"
             except (TypeError, ValueError):
                 dist_str = str(dist)
         else:
             dist_str = "distance: n/a"
 
-        timestamp_str = " | ".join([part for part in [postcode, dist_str] if part])
+        timestamp_str = f"{postcode or 'No postcode'} | {dist_str}"
+        value_str = reg_type or reg_label or "Permit"
 
         row = {
             "lat": geo["lat"],
@@ -298,9 +341,9 @@ def build_permits_dataframe_with_coords(
             "distance_km": dist,
             # Aliases for the shared tooltip template
             "station_id": operator,  # shows as bold title
-            "priority": "permit",  # shows 'permit' as the "priority"
-            "value": reg_type or reg_label,  # shows type/label as 'value'
-            "timestamp": timestamp_str,  # shows postcode + distance
+            "priority": "PERMIT",  # shows 'PERMIT' as the "priority"
+            "value": value_str,  # shows type/label as 'value'
+            "timestamp_str": timestamp_str,  # shows postcode + distance
         }
         rows.append(row)
 
@@ -436,24 +479,29 @@ def main() -> None:
                     "ScatterplotLayer",
                     data=df_readings,
                     get_position="[lon, lat]",
-                    get_radius=1200,  # bigger markers for stations
+                    get_radius=400,  # station markers
                     get_fill_color="color",
                     pickable=True,
+                    opacity=0.8,
                 )
 
             # --- Permit points (geocoded) ---
             permit_layer = None
             if not df_permits_geo.empty:
-                # Smaller purple-ish markers for permits
-                df_permits_geo["color"] = [[138, 43, 226] for _ in range(len(df_permits_geo))]
+                # Bright purple markers for permits
+                df_permits_geo["color"] = [[180, 80, 255, 200] for _ in range(len(df_permits_geo))]
 
                 permit_layer = pdk.Layer(
                     "ScatterplotLayer",
                     data=df_permits_geo,
                     get_position="[lon, lat]",
-                    get_radius=400,  # smaller markers for permits
+                    get_radius=300,  # permit markers (smaller than stations)
                     get_fill_color="color",
+                    get_line_color=[255, 255, 255],
+                    get_line_width=2,
+                    line_width_min_pixels=1,
                     pickable=True,
+                    opacity=0.9,
                 )
 
             tooltip = {
@@ -461,7 +509,7 @@ def main() -> None:
                     "<b>{station_id}</b><br/>"
                     "Priority: {priority}<br/>"
                     "Value: {value}<br/>"
-                    "{timestamp}"
+                    "{timestamp_str}"
                 )
             }
 

@@ -35,9 +35,9 @@ uv run streamlit run streamlit_app.py
 - 📊 **Interactive Dashboard**: Streamlit UI with map-based visualization of incidents, sensors, and permits
 - 🔌 **MCP Integration**: Dual approach with LangChain @tool decorators for agents + FastMCP server for external clients
 - 🌊 **Real-time Data**: Integrates Flood Monitoring, Hydrology, and Public Registers APIs
-- 🚨 **Anomaly Detection**: Statistical z-score based detection with configurable thresholds
-- 🧠 **LLM-Powered Analysis**: OpenAI-driven incident summarization and prioritization
-- 🗺️ **Geospatial Context**: Maps sensors and nearby environmental permits for regulatory context
+- 🚨 **Spatial & Temporal Clustering**: Groups anomalies by location (10km radius) and time (24 hours) for localized incident detection
+- 🧠 **Context-Aware Alerts**: Data-driven summaries that adapt to flood vs hydrology readings with relevant permit analysis
+- 🗺️ **Geospatial Intelligence**: Maps sensors and nearby environmental permits with color-coded priorities
 - 💾 **Persistent Storage**: MongoDB for incidents, PostgreSQL/pgvector for embeddings
 
 ## Key Highlights
@@ -298,23 +298,27 @@ See `docs/MCP_INTEGRATION.md` for detailed architecture and usage patterns.
 
 1. **Fetches** latest environmental readings from EA Flood Monitoring and Hydrology APIs
 2. **Detects** anomalies in water levels, flows, and groundwater using statistical z-score method
-3. **Generates** structured alerts with LLM-powered analysis (OpenAI) including:
-   - Priority levels (high/medium/low)
-   - Incident summaries
-   - Suggested actions
-4. **Enriches** with regulatory context by searching Public Registers for nearby permits
-5. **Stores** complete incidents in MongoDB with embeddings in PostgreSQL (pgvector)
+3. **Clusters** anomalies spatially (10km radius) and temporally (24 hours) to identify localized incidents
+4. **Searches** for nearby environmental permits within 1km of each cluster center
+5. **Generates** context-aware alerts with data-driven analysis including:
+   - Priority levels (high/medium/low) based on threshold exceedance
+   - Flood-aware summaries (river levels, flood risk) or hydrology-aware summaries (groundwater, contamination risk)
+   - Specific station IDs, peak/average values, and threshold context
+   - Permit type categorization (flood risk activities, discharge consents, waste operations)
+   - Suggested actions tailored to the source type and nearby permit types
+6. **Stores** complete incidents in MongoDB with cluster-specific readings, alerts, and permits
 
 ### Dashboard Features
 
 The Streamlit dashboard (`streamlit_app.py`) provides:
 
-- **Interactive Map**: Visualize sensor locations color-coded by alert priority (red=high, orange=medium, yellow=low, blue=normal)
-- **Permit Overlay**: Geocoded environmental permit holders displayed on the map
-- **Incident Explorer**: Browse historical incidents with filtering
-- **Alert Analysis**: View AI-generated summaries and recommended actions
-- **Regulatory Context**: See nearby waste, water quality, and discharge permits
-- **Data Tables**: Detailed readings, alerts, and permit information
+- **Interactive Map**: Visualize sensor locations color-coded by alert priority (red=high, orange=medium, yellow=low)
+- **Permit Overlay**: Geocoded environmental permit holders displayed as purple markers
+- **Incident Selector**: Browse incidents sorted by priority with station IDs, coordinates, and timestamps
+- **Alert Analysis**: View data-driven summaries with specific values, thresholds, and context
+- **Regulatory Context**: See nearby permits categorized by type (flood risk, waste, discharge)
+- **Data Tables**: Detailed readings with coordinates, alerts with priorities, and permit information
+- **Map Tooltips**: Hover over markers to see station details, readings, and permit locations
 
 ## API Endpoints Used
 
@@ -392,15 +396,23 @@ uv run mypy src
 ```
 ├── src/defra_agent/
 │   ├── agent/          # LangGraph agent logic and workflow orchestration
-│   │   ├── graph.py          # Standard detection cycle graph
-│   │   └── mcp_graph.py      # Enhanced graph with MCP tools
-│   ├── domain/         # Core models (Reading, Alert, Incident, AnomalyDetector)
-│   ├── services/       # Business logic (anomaly detection, summarization)
-│   ├── storage/        # MongoDB and pgvector repositories
+│   │   ├── graph.py          # Clustering-based detection with context-aware alerts
+│   │   └── main.py           # Agent entry point
+│   ├── domain/         # Core models and business logic
+│   │   ├── models.py           # Reading, Alert, Incident data models
+│   │   ├── anomaly_detector.py # Z-score based anomaly detection
+│   │   └── clustering.py       # Spatial/temporal clustering (10km/24h)
+│   ├── services/       # Application services
+│   │   ├── incident_service.py # End-to-end incident creation workflow
+│   │   └── summariser.py       # Alert summarization (currently unused - using data-driven approach)
+│   ├── storage/        # Persistence layer
+│   │   ├── mongo_repo.py       # Incident repository (MongoDB)
+│   │   ├── pgvector_repo.py    # Vector embeddings (PostgreSQL)
+│   │   └── station_repo.py     # Station metadata with coordinates
 │   ├── tools/          # API clients and MCP tools
-│   │   ├── flood_client.py         # Direct Flood API client
-│   │   ├── hydrology_client.py     # Direct Hydrology API client
-│   │   ├── public_registers_client.py  # Direct Public Registers client
+│   │   ├── flood_client.py         # Flood API with coordinate enrichment
+│   │   ├── hydrology_client.py     # Hydrology API with coordinate enrichment
+│   │   ├── public_registers_client.py  # Permit search by coordinates
 │   │   └── mcp_tools.py            # LangChain @tool decorators for agent
 │   └── config.py       # Pydantic settings and environment configuration
 ├── mcp_servers/
@@ -409,6 +421,9 @@ uv run mypy src
 ├── docs/
 │   └── MCP_INTEGRATION.md  # MCP architecture and usage guide
 ├── scripts/            # Development and test scripts
+│   ├── sync_stations.py        # Populate station metadata repository
+│   ├── run_agent.py            # Execute agent workflow
+│   └── test_*.py               # Various integration tests
 ├── tests/              # Unit tests
 ├── infra/              # Docker Compose and database initialization
 ├── streamlit_app.py    # Interactive dashboard for incident visualization
@@ -454,14 +469,18 @@ PG_DSN=dbname=defra user=defra password=defra host=localhost
 
 ## Data Flow
 
-1. **FloodClient** → Fetches real-time readings from EA Flood Monitoring API
-2. **HydrologyClient** → Fetches flow and groundwater data from EA Hydrology API
+1. **FloodClient** → Fetches real-time readings from EA Flood Monitoring API with coordinate enrichment from StationMetadataRepository
+2. **HydrologyClient** → Fetches flow and groundwater data from EA Hydrology API with coordinate enrichment
 3. **AnomalyDetector** → Identifies outliers using z-score method (configurable threshold)
-4. **PublicRegistersClient** → Searches for nearby environmental permits
-5. **AlertSummariser** → Uses OpenAI to generate structured alerts with priorities and recommendations
-6. **IncidentRepository** → Stores complete incidents in MongoDB
-7. **IncidentVectorRepository** → Stores alert embeddings in PostgreSQL for similarity search
-8. **Streamlit Dashboard** → Visualizes incidents, sensors, and permits on an interactive map
+4. **Clustering Module** → Groups anomalies spatially (10km radius) and filters to recent 24 hours
+5. **PublicRegistersClient** → Searches for environmental permits within 1km of each cluster center
+6. **Context-Aware Alert Generator** → Creates data-driven summaries based on source type:
+   - **Flood readings**: "Elevated river levels" with flood risk assessment and flow-related permit analysis
+   - **Hydrology readings**: "Anomalous groundwater" with contamination risk and waste permit analysis
+   - Specific station IDs, peak/average values, threshold exceedance percentages
+   - Suggested actions tailored to reading type and nearby permit categories
+7. **IncidentRepository** → Stores one incident per cluster with cluster-specific readings, alerts, and permits in MongoDB
+8. **Streamlit Dashboard** → Visualizes incidents, sensors, and permits on an interactive map with priority-based sorting
 
 ## Example Usage
 

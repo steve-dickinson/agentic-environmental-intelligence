@@ -73,36 +73,28 @@ async def get_flood_readings(parameter: str = "level") -> dict[str, Any]:
         - value: Reading value
         - timestamp: When reading was taken
         - source: Always 'flood'
-        - measure_url: URL to the measure
+        - easting: British National Grid easting coordinate
+        - northing: British National Grid northing coordinate
+        - lat: Latitude (WGS84)
+        - lon: Longitude (WGS84)
     """
-    readings_url = "https://environment.data.gov.uk/flood-monitoring/data/readings"
-    readings_params = {
-        "latest": "",
-        "parameter": parameter,
-    }
-    readings_json = await _get_json(readings_url, readings_params)
-    raw_items = readings_json.get("items", [])
+    from defra_agent.tools.flood_client import FloodClient
+
+    client = FloodClient()
+    readings = await client.get_latest_readings(parameter=parameter)
 
     enriched_readings: list[dict[str, Any]] = []
-    for item in raw_items:
-        value = item.get("value")
-        timestamp = item.get("dateTime")
-        measure_url = item.get("measure", "")
-
-        if value is None or timestamp is None or not measure_url:
-            continue
-
-        station_id = _extract_station_id_from_measure(measure_url)
-        if not station_id:
-            continue
-
+    for reading in readings:
         enriched_readings.append(
             {
-                "station_id": station_id,
-                "value": float(value),
-                "timestamp": str(timestamp),
-                "source": "flood",
-                "measure_url": str(measure_url),
+                "station_id": reading.station_id,
+                "value": reading.value,
+                "timestamp": reading.timestamp.isoformat(),
+                "source": reading.source,
+                "easting": reading.easting,
+                "northing": reading.northing,
+                "lat": reading.lat,
+                "lon": reading.lon,
             }
         )
 
@@ -126,41 +118,28 @@ async def get_hydrology_readings(observed_property: str = "waterLevel") -> dict[
         - value: Reading value
         - timestamp: When reading was taken
         - source: Always 'hydrology'
-        - measure_url: URL to the measure
+        - easting: British National Grid easting coordinate
+        - northing: British National Grid northing coordinate
+        - lat: Latitude (WGS84)
+        - lon: Longitude (WGS84)
     """
-    readings_url = "https://environment.data.gov.uk/hydrology/data/readings.json"
-    readings_params = {
-        "latest": "",
-        "observedProperty": observed_property,
-    }
-    readings_json = await _get_json(readings_url, readings_params)
-    raw_items = readings_json.get("items", [])
+    from defra_agent.tools.hydrology_client import HydrologyClient
+
+    client = HydrologyClient()
+    readings = await client.get_latest_readings(observed_property=observed_property)
 
     enriched_readings: list[dict[str, Any]] = []
-    for item in raw_items:
-        value = item.get("value")
-        timestamp = item.get("dateTime")
-        measure = item.get("measure", "")
-
-        if value is None or timestamp is None or not measure:
-            continue
-
-        station_id = _extract_station_id_from_measure(measure)
-        if not station_id:
-            continue
-
-        if isinstance(measure, dict):
-            measure_url = measure.get("@id", "")
-        else:
-            measure_url = str(measure)
-
+    for reading in readings:
         enriched_readings.append(
             {
-                "station_id": station_id,
-                "value": float(value),
-                "timestamp": str(timestamp),
-                "source": "hydrology",
-                "measure_url": measure_url,
+                "station_id": reading.station_id,
+                "value": reading.value,
+                "timestamp": reading.timestamp.isoformat(),
+                "source": reading.source,
+                "easting": reading.easting,
+                "northing": reading.northing,
+                "lat": reading.lat,
+                "lon": reading.lon,
             }
         )
 
