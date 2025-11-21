@@ -1,0 +1,31 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: defra
+      POSTGRES_USER: defra
+      POSTGRES_PASSWORD: defra
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db-init/pgvector.sql:/docker-entrypoint-initdb.d/pgvector.sql
+
+  agent:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.agent
+    env_file:
+      - ../.env
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      PG_DSN: dbname=defra user=defra password=defra host=postgres
+    depends_on:
+      - mongo
+      - postgres
