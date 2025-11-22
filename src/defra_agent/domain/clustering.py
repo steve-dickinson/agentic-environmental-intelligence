@@ -1,5 +1,3 @@
-"""Spatial and temporal clustering for incident detection."""
-
 from datetime import UTC, timedelta
 from math import atan2, cos, radians, sin, sqrt
 

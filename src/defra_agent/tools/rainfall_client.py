@@ -1,5 +1,3 @@
-"""Client for fetching rainfall data from Environment Agency Flood Monitoring API."""
-
 from datetime import UTC, datetime, timedelta
 from typing import Any
 

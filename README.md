@@ -60,7 +60,7 @@ This project demonstrates:
 
 Before you begin, make sure you have:
 
-- [ ] Python 3.12 or higher installed (`python --version`)
+- [ ] Python 3.12 or higher installed (`python3 --version`)
 - [ ] Docker and Docker Compose installed (`docker --version`)
 - [ ] An OpenAI API key (get one at https://platform.openai.com/api-keys)
 - [ ] At least 2GB of free disk space

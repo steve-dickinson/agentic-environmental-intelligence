@@ -45,7 +45,6 @@ async def main() -> None:
     repo.bulk_upsert("flood", flood_items)
     print(f"Stored {len(flood_items)} flood stations")
 
-    # Also store as rainfall source for stations with rainfall measures
     rainfall_stations = [
         s
         for s in flood_items

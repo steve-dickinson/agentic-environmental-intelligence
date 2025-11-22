@@ -1,5 +1,3 @@
-"""Agentic environmental monitoring graph with LLM-driven decision making."""
-
 import json
 from typing import Annotated, Any, Literal
 

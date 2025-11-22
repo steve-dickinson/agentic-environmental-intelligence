@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""Check how many flood stations exist."""
-
 import asyncio
 
 import httpx
@@ -25,7 +22,6 @@ async def main() -> None:
             print(f"  Got {len(items)} stations")
             total_fetched += len(items)
 
-            # Find next link
             next_url = None
             for link in data.get("links", []):
                 if link.get("rel") == "next":
@@ -36,7 +32,7 @@ async def main() -> None:
                 break
 
             url = next_url
-            params = {}  # Next URL already has params
+            params = {}
             page += 1
 
     print(f"\nTotal flood monitoring stations: {total_fetched}")

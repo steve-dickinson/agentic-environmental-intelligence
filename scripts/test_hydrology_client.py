@@ -4,7 +4,6 @@ from defra_agent.tools.hydrology_client import HydrologyClient
 
 
 async def main() -> None:
-    """Test the hydrology client by fetching latest readings."""
     client = HydrologyClient()
 
     print("Fetching latest hydrology readings...")

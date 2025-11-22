@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Any
 
 import httpx
 
@@ -13,9 +12,7 @@ class FloodClient:
     def __init__(self) -> None:
         self._station_repo = StationMetadataRepository()
 
-    async def get_latest_readings(
-        self, parameter: str = "level"
-    ) -> list[Reading]:
+    async def get_latest_readings(self, parameter: str = "level") -> list[Reading]:
         url = f"{FLOOD_ROOT_URL}/data/readings"
         params = {"latest": "", "parameter": parameter}
 
@@ -32,7 +29,7 @@ class FloodClient:
                     print(f"Failed to fetch flood readings after {max_retries} attempts: {e}")
                     return []
                 print(f"Attempt {attempt + 1} failed, retrying...")
-                await __import__('asyncio').sleep(2 ** attempt)
+                await __import__("asyncio").sleep(2**attempt)
         else:
             return []
 

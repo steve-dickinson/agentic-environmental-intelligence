@@ -41,9 +41,8 @@ def _extract_station_id_from_measure(measure: Any) -> str | None:
     if not measure_url:
         return None
 
-    # Extract measure ID from URL (last part)
     measure_id = measure_url.split("/")[-1]
-    # Station ID is the part before the first hyphen
+
     parts = measure_id.split("-")
     return parts[0] if parts else None
 
@@ -83,7 +82,6 @@ async def get_flood_readings(args: FloodReadingsInput) -> dict[str, Any]:
     readings_json = await _get_json(readings_url, readings_params)
     raw_items = readings_json.get("items", [])
 
-    # Build enriched readings
     enriched_readings: list[dict[str, Any]] = []
     for item in raw_items:
         value = item.get("value")
@@ -139,7 +137,6 @@ async def get_hydrology_readings(args: HydrologyReadingsInput) -> dict[str, Any]
         "count": 100
       }
     """
-    # Fetch all latest readings
     readings_url = "https://environment.data.gov.uk/hydrology/data/readings.json"
     readings_params = {
         "latest": "",
@@ -148,7 +145,6 @@ async def get_hydrology_readings(args: HydrologyReadingsInput) -> dict[str, Any]
     readings_json = await _get_json(readings_url, readings_params)
     raw_items = readings_json.get("items", [])
 
-    # Build enriched readings
     enriched_readings: list[dict[str, Any]] = []
     for item in raw_items:
         value = item.get("value")
@@ -162,7 +158,6 @@ async def get_hydrology_readings(args: HydrologyReadingsInput) -> dict[str, Any]
         if not station_id:
             continue
 
-        # Handle both string URLs and dict with @id
         if isinstance(measure, dict):
             measure_url = measure.get("@id", "")
         else:

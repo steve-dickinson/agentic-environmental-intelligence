@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from defra_agent.storage.station_repo import StationMetadataRepository
 
 repo = StationMetadataRepository()
@@ -15,7 +14,6 @@ for sid in test_ids:
     else:
         print(f"  ✗ {sid}: Not found")
 
-# Check if they exist with different source
 print("\nChecking if missing IDs exist in other sources...")
 for sid in ["3680", "3275", "3167", "3307"]:
     for source in ["flood", "hydrology"]:
