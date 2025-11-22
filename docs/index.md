@@ -5,6 +5,8 @@ title: Agentic Environmental Intelligence
 
 # Agentic Environmental Intelligence
 
+> **⚠️ Disclaimer**: This is a proof of concept and personal project for learning and demonstration purposes. It is **not** in production use and is not affiliated with or endorsed by the UK Environment Agency or any government organization. Data accuracy and reliability are not guaranteed.
+
 An AI-powered environmental monitoring system that autonomously detects, analyzes, and reports potential environmental incidents across England using real-time data from the UK Environment Agency.
 
 ## Overview

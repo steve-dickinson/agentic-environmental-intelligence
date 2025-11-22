@@ -5,6 +5,8 @@ title: Architecture
 
 # System Architecture
 
+> **⚠️ Note**: This is a proof of concept and personal project, not a production system. The architecture described here is for educational and demonstration purposes.
+
 ## High-Level Overview
 
 ```
