@@ -1,0 +1,9 @@
+remote_theme: pages-themes/cayman@v0.2.0
+plugins:
+- jekyll-remote-theme
+
+title: Agentic Environmental Intelligence
+description: AI-powered environmental monitoring using UK Environment Agency data
+show_downloads: true
+github:
+  repository_url: https://github.com/steve-dickinson/agentic-environmental-intelligence
