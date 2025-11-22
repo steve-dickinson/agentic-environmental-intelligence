@@ -150,6 +150,50 @@ async def get_hydrology_readings(observed_property: str = "waterLevel") -> dict[
 
 
 @tool
+async def get_rainfall_readings(parameter: str = "rainfall") -> dict[str, Any]:
+    """Get latest rainfall readings from Environment Agency.
+
+    Args:
+        parameter: Parameter to filter by (usually 'rainfall'). Default is 'rainfall'.
+
+    Returns:
+        Dictionary with 'readings' list and 'count'. Each reading has:
+        - station_id: Station identifier
+        - value: Rainfall value in mm
+        - timestamp: When reading was taken
+        - source: Always 'rainfall'
+        - easting: British National Grid easting coordinate
+        - northing: British National Grid northing coordinate
+        - lat: Latitude (WGS84)
+        - lon: Longitude (WGS84)
+    """
+    from defra_agent.tools.rainfall_client import RainfallClient
+
+    client = RainfallClient()
+    readings = await client.get_latest_readings(parameter=parameter)
+
+    enriched_readings: list[dict[str, Any]] = []
+    for reading in readings:
+        enriched_readings.append(
+            {
+                "station_id": reading.station_id,
+                "value": reading.value,
+                "timestamp": reading.timestamp.isoformat(),
+                "source": reading.source,
+                "easting": reading.easting,
+                "northing": reading.northing,
+                "lat": reading.lat,
+                "lon": reading.lon,
+            }
+        )
+
+    return {
+        "readings": enriched_readings,
+        "count": len(enriched_readings),
+    }
+
+
+@tool
 async def search_public_registers(
     postcode: str,
     easting: int,

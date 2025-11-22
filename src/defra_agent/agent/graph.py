@@ -22,6 +22,7 @@ from defra_agent.storage.pgvector_repo import IncidentVectorRepository
 from defra_agent.tools.mcp_tools import (
     get_flood_readings,
     get_hydrology_readings,
+    get_rainfall_readings,
     search_public_registers,
 )
 
@@ -87,6 +88,7 @@ def _get_tools() -> list:
     return [
         get_flood_readings,
         get_hydrology_readings,
+        get_rainfall_readings,
         search_public_registers,
     ]
 
@@ -102,6 +104,7 @@ flood and hydrology sensor data, identifying anomalies, and gathering regulatory
 Available tools:
 - get_flood_readings: Fetch latest flood monitoring data (water levels)
 - get_hydrology_readings: Fetch latest hydrology data (flow, groundwater)
+- get_rainfall_readings: Fetch latest rainfall data (precipitation)
 - search_public_registers: Search for environmental permits near a location
 
 Workflow:
@@ -110,13 +113,13 @@ Workflow:
 3. NEXT: Call get_hydrology_readings with parameter='waterLevel'
 4. WAIT for anomaly detection to complete automatically
 5. IF anomalies found: Optionally search for nearby permits
-6. System will automatically generate final incident report
+6. System will automatically generate final incident report with rainfall correlation
 
 CRITICAL RULES:
 - Call only ONE tool per turn
 - Never call the same tool multiple times
 - Wait for feedback before deciding next action
-- After data collection, the system handles analysis automatically
+- After data collection, the system handles analysis automatically (including rainfall)
 
 Be systematic and patient."""
     )
@@ -360,8 +363,10 @@ async def generate_incident_node(state: AgentState) -> AgentState:
 
     # Import the public registers client for per-cluster permit search
     from defra_agent.tools.public_registers_client import PublicRegistersClient
+    from defra_agent.tools.rainfall_client import RainfallClient
 
     registers_client = PublicRegistersClient()
+    rainfall_client = RainfallClient()
 
     for i, cluster in enumerate(clusters, 1):
         print(f"\n   🎯 Processing cluster {i}/{len(clusters)}: {len(cluster)} anomalies")
@@ -407,6 +412,24 @@ async def generate_incident_node(state: AgentState) -> AgentState:
         is_flood = "flood" in sources
         is_hydrology = "hydrology" in sources
 
+        # Check rainfall correlation for flood clusters
+        rainfall_stats = None
+        if is_flood and center_lat and center_lon:
+            try:
+                rainfall_stats = await rainfall_client.calculate_total_rainfall(
+                    lat=center_lat,
+                    lon=center_lon,
+                    radius_km=10.0,
+                    hours=24,
+                )
+                if rainfall_stats["total_mm"] > 0:
+                    print(
+                        f"      Rainfall: {rainfall_stats['total_mm']:.1f}mm "
+                        f"({rainfall_stats['station_count']} stations)"
+                    )
+            except Exception as e:
+                print(f"      ⚠️  Error fetching rainfall: {e}")
+
         # Build context-aware summary based on source
         station_names = station_list[0]
         if len(station_list) > 1:
@@ -420,6 +443,29 @@ async def generate_incident_node(state: AgentState) -> AgentState:
                 f"Peak: {max_value:.2f}m, Average: {avg_value:.2f}m. "
                 f"Flood risk threshold: {settings.anomaly_threshold}m. "
             )
+
+            # Add rainfall correlation context
+            if rainfall_stats:
+                total_rainfall = rainfall_stats["total_mm"]
+                station_count = rainfall_stats["station_count"]
+
+                if total_rainfall > 15:
+                    content += (
+                        f"Coincides with heavy rainfall: {total_rainfall:.1f}mm "
+                        f"in last 24h from {station_count} stations. "
+                    )
+                elif total_rainfall > 5:
+                    content += (
+                        f"Moderate rainfall detected: {total_rainfall:.1f}mm "
+                        f"in last 24h from {station_count} stations. "
+                    )
+                elif total_rainfall > 0:
+                    content += f"Light rainfall: {total_rainfall:.1f}mm in last 24h. "
+                else:
+                    content += (
+                        "No significant rainfall in last 24h - "
+                        "investigate non-meteorological causes. "
+                    )
         elif is_hydrology and not is_flood:
             # Hydrology context - groundwater, flow, potential contamination
             content = (

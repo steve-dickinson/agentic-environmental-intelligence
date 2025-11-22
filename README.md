@@ -21,10 +21,13 @@ uv sync
 # 4. Start databases
 cd infra && docker compose up -d mongo postgres && cd ..
 
-# 5. Run the agent (creates incidents)
+# 5. Sync station metadata (required for coordinates)
+uv run python scripts/sync_stations.py
+
+# 6. Run the agent (creates incidents)
 uv run defra-agent-run
 
-# 6. View the dashboard
+# 7. View the dashboard
 uv run streamlit run streamlit_app.py
 # Open http://localhost:8501 in your browser
 ```
