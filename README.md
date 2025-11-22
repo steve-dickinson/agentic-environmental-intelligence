@@ -1,6 +1,6 @@
 # Agentic Environmental Intelligence
 
-> **⚠️ Disclaimer**: This is a proof of concept and personal project for learning and demonstration purposes. It is **not** in production use and is not affiliated with or endorsed by the UK Environment Agency or any government organization. Data accuracy and reliability are not guaranteed.
+> **⚠️ Disclaimer**: This is a proof of concept and personal project for learning and demonstration purposes. It is **not** in production use and is not affiliated with or endorsed by the UK Environment Agency or any government organisation. Data accuracy and reliability are not guaranteed.
 
 An agentic AI proof-of-concept that monitors environmental data from UK government APIs (DEFRA/Environment Agency), detects anomalies, generates intelligent alerts using LangGraph and OpenAI, and provides an interactive Streamlit dashboard for incident visualization.
 
