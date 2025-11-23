@@ -11,6 +11,7 @@ import streamlit as st
 from pymongo import MongoClient
 
 from defra_agent.config import settings
+from defra_agent.storage.pgvector_repo import IncidentVectorRepository
 
 # ---------- Mongo connection ----------
 
@@ -565,6 +566,51 @@ def main() -> None:
             st.info("No alerts recorded – no significant anomalies were found.")
 
         st.markdown("---")
+        st.subheader("📚 Similar historical incidents (RAG)")
+
+        # Use RAG to find similar past incidents
+        if alerts:
+            try:
+                vector_repo = IncidentVectorRepository()
+                query_text = alerts[0].get("summary", "")
+
+                if query_text:
+                    similar = vector_repo.find_similar_incidents(
+                        query_text=query_text,
+                        limit=3,
+                        similarity_threshold=0.6,
+                    )
+
+                    # Filter out the current incident
+                    current_id = incident.get("_id")
+                    similar_filtered = [s for s in similar if s.incident_id != str(current_id)]
+
+                    if similar_filtered:
+                        st.markdown(
+                            "**Found similar past incidents using vector similarity search:**"
+                        )
+                        for i, sim in enumerate(similar_filtered[:3], 1):
+                            with st.expander(
+                                f"{i}. Similarity: {sim.similarity:.1%} - {sim.summary[:80]}...",
+                                expanded=(i == 1),
+                            ):
+                                st.markdown(f"**Incident ID:** `{sim.incident_id}`")
+                                st.markdown(f"**Similarity Score:** {sim.similarity:.2%}")
+                                st.markdown(f"**Summary:** {sim.summary}")
+                                st.caption(
+                                    "This incident was identified using semantic search (RAG) "
+                                    "based on embedding similarity."
+                                )
+                    else:
+                        st.info(
+                            "No similar historical incidents found above 60% similarity threshold."
+                        )
+            except Exception as e:
+                st.warning(f"RAG search unavailable: {e}")
+        else:
+            st.info("RAG search requires at least one alert to find similar incidents.")
+
+        st.markdown("---")
         st.subheader("Regulatory context (Public Registers permits)")
 
         if permits:
@@ -619,6 +665,185 @@ def main() -> None:
             )
         else:
             st.info("No nearby permits were linked to this incident.")
+
+    # ---------- RAG Query Testing ----------
+
+    st.markdown("---")
+    st.subheader("🔍 Test RAG Semantic Search")
+    st.caption(
+        "Try searching for incidents using natural language. "
+        "RAG uses vector embeddings to find semantically similar incidents, not just keyword matches."
+    )
+
+    with st.expander("ℹ️ How RAG works", expanded=False):
+        st.markdown("""
+        **RAG (Retrieval-Augmented Generation)** uses vector embeddings to find similar incidents:
+        
+        1. Your query is converted to a 1536-dimensional vector using OpenAI embeddings
+        2. We search the pgvector database for similar incident summaries using cosine similarity
+        3. Results are ranked by similarity score (0-1, where 1.0 is identical)
+        
+        **Try these example queries:**
+        - "Elevated river levels with no rainfall"
+        - "High water detected in Somerset area"
+        - "Groundwater contamination near industrial sites"
+        - "Flood risk with upstream discharge"
+        
+        **What makes RAG powerful:**
+        - Understands meaning, not just keywords
+        - "high water" matches "elevated levels" (semantically similar)
+        - Quantifies relevance with similarity scores
+        - Fast: ~0.2 seconds to search thousands of incidents
+        """)
+
+    # Pre-defined example queries
+    example_queries = [
+        "Elevated river levels with no recent rainfall",
+        "High water detected near Somerset Levels",
+        "Groundwater contamination risk",
+        "Flood risk with discharge permits nearby",
+        "Multiple stations showing anomalous readings",
+    ]
+
+    col1, col2 = st.columns([3, 1])
+
+    with col1:
+        query_input = st.text_input(
+            "Enter your query:",
+            value="Elevated river levels with no recent rainfall",
+            help="Describe what kind of incident you're looking for",
+        )
+
+    with col2:
+        st.markdown("<br>", unsafe_allow_html=True)  # Spacer
+        search_clicked = st.button("🔍 Search", type="primary", use_container_width=True)
+
+    # Example query buttons
+    st.markdown("**Quick examples:**")
+    cols = st.columns(5)
+    for idx, example in enumerate(example_queries):
+        if cols[idx % 5].button(
+            example[:30] + "...", key=f"example_{idx}", use_container_width=True
+        ):
+            query_input = example
+            search_clicked = True
+
+    if search_clicked or query_input:
+        try:
+            vector_repo = IncidentVectorRepository()
+
+            # Allow threshold adjustment
+            threshold = st.slider(
+                "Similarity threshold",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.6,
+                step=0.05,
+                help="Minimum similarity score to include (0.0 = any match, 1.0 = exact match)",
+            )
+
+            with st.spinner("Searching vector database..."):
+                results = vector_repo.find_similar_incidents(
+                    query_text=query_input,
+                    limit=10,
+                    similarity_threshold=threshold,
+                )
+
+            if results:
+                st.success(f"Found {len(results)} similar incidents (threshold: {threshold:.0%})")
+
+                # Show results in a nice format
+                for i, result in enumerate(results, 1):
+                    # Determine color based on similarity
+                    if result.similarity >= 0.9:
+                        badge_color = "🟢"
+                        badge_text = "Very high"
+                    elif result.similarity >= 0.75:
+                        badge_color = "🟡"
+                        badge_text = "High"
+                    elif result.similarity >= 0.6:
+                        badge_color = "🟠"
+                        badge_text = "Medium"
+                    else:
+                        badge_color = "⚪"
+                        badge_text = "Low"
+
+                    with st.expander(
+                        f"{i}. {badge_color} {result.similarity:.1%} similarity ({badge_text}) - {result.summary[:100]}...",
+                        expanded=(i <= 3),  # Expand top 3 results
+                    ):
+                        st.markdown(f"**Incident ID:** `{result.incident_id}`")
+                        st.progress(result.similarity, text=f"Similarity: {result.similarity:.2%}")
+                        st.markdown(f"**Full Summary:**\n\n{result.summary}")
+
+                        # Try to get full incident details from MongoDB
+                        try:
+                            coll = get_incidents_collection()
+                            full_incident = coll.find_one({"_id": result.incident_id})
+
+                            if full_incident:
+                                incident_summary = compute_incident_summary(full_incident)
+
+                                st.markdown("---")
+                                st.markdown("**Incident Details:**")
+
+                                col_a, col_b, col_c = st.columns(3)
+                                col_a.metric("Readings", incident_summary["reading_count"])
+                                col_b.metric("Alerts", incident_summary["alert_count"])
+                                col_c.metric("Permits", incident_summary["permit_count"])
+
+                                if incident_summary["time"]:
+                                    st.caption(
+                                        f"Detected: {incident_summary['time'].strftime('%Y-%m-%d %H:%M')}"
+                                    )
+                        except Exception as e:
+                            st.caption(f"Could not load full incident details: {e}")
+
+                # Summary statistics
+                st.markdown("---")
+                st.markdown("**Search Statistics:**")
+                avg_sim = sum(r.similarity for r in results) / len(results)
+                max_sim = max(r.similarity for r in results)
+                min_sim = min(r.similarity for r in results)
+
+                stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+                stat_col1.metric("Results", len(results))
+                stat_col2.metric("Avg Similarity", f"{avg_sim:.1%}")
+                stat_col3.metric("Best Match", f"{max_sim:.1%}")
+                stat_col4.metric("Worst Match", f"{min_sim:.1%}")
+
+            else:
+                st.info(
+                    f"No incidents found above {threshold:.0%} similarity threshold. "
+                    "Try lowering the threshold or using a different query."
+                )
+                st.markdown("**Suggestions:**")
+                st.markdown("- Lower the similarity threshold slider")
+                st.markdown(
+                    "- Use more general terms (e.g., 'elevated levels' instead of specific values)"
+                )
+                st.markdown("- Try different phrasing")
+
+        except Exception as e:
+            st.error(f"RAG search error: {e}")
+            st.caption("Make sure pgvector is running and incidents have been indexed.")
+
+    st.markdown("---")
+    st.info("""
+    **📊 Future Enhancement: Knowledge Graph Comparison (Phase 2)**
+    
+    In Phase 2, we'll add a Knowledge Graph query interface alongside this RAG search.
+    You'll be able to compare:
+    
+    - **RAG**: "Find similar incidents" (semantic similarity)
+    - **Graph**: "What caused this incident?" (causal reasoning)
+    
+    Example:
+    - RAG: "Elevated levels in Somerset" → finds similar events
+    - Graph: "Which permits caused elevated levels via upstream discharge?" → traces causality
+    
+    Stay tuned!
+    """)
 
     # ---------- Detailed tables ----------
 

@@ -3,6 +3,8 @@ layout: default
 title: Architecture
 ---
 
+**Navigation**: [Home](index.md) | [Changelog](changelog.md) | [Architecture](architecture.md) | [GitHub](https://github.com/steve-dickinson/agentic-environmental-intelligence)
+
 # System Architecture
 
 > **⚠️ Note**: This is a proof of concept and personal project, not a production system. The architecture described here is for educational and demonstration purposes.

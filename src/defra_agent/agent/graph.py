@@ -16,7 +16,7 @@ from defra_agent.domain.clustering import (
 )
 from defra_agent.domain.models import Alert, AlertPriority, Incident, Permit, Reading
 from defra_agent.storage.mongo_repo import IncidentRepository
-from defra_agent.storage.pgvector_repo import IncidentVectorRepository
+from defra_agent.storage.pgvector_repo import IncidentVectorRepository, SimilarIncident
 from defra_agent.tools.mcp_tools import (
     get_flood_readings,
     get_hydrology_readings,
@@ -70,6 +70,7 @@ class AgentState(TypedDict):
     permits: list[dict[str, Any]]  # Nearby environmental permits
     incident: Incident | None  # Final generated incident
     incidents: list[Incident]  # All generated incidents (one per cluster)
+    similar_incidents: list[SimilarIncident]  # RAG: Similar historical incidents
     next_action: str  # Tracking for routing
 
 
@@ -166,7 +167,7 @@ def agent_node(state: AgentState) -> AgentState:
 
 def route_after_agent(
     state: AgentState,
-) -> Literal["tools", "detect_anomalies", "generate_incident", "end"]:
+) -> Literal["tools", "detect_anomalies", "enrich_with_rag", "generate_incident", "end"]:
     """Route based on agent's decision."""
     last_message = state["messages"][-1]
 
@@ -180,7 +181,12 @@ def route_after_agent(
         print("   📍 Routing to: detect_anomalies")
         return "detect_anomalies"
 
-    # If we have anomalies, generate incident
+    # If we have anomalies and clusters, but haven't done RAG search yet
+    if state["clusters"] and not state.get("similar_incidents"):
+        print("   📍 Routing to: enrich_with_rag")
+        return "enrich_with_rag"
+
+    # If we have anomalies and RAG context, generate incident
     if state["anomalies"]:
         print("   📍 Routing to: generate_incident")
         return "generate_incident"
@@ -339,8 +345,98 @@ def detect_anomalies_node(state: AgentState) -> AgentState:
         "clusters": clusters,
         "current_cluster_index": 0,
         "incidents": [],
+        "similar_incidents": [],
         "messages": state["messages"] + [HumanMessage(content=anomaly_summary)],
     }
+
+
+async def enrich_with_rag_node(state: AgentState) -> AgentState:
+    """Search for similar historical incidents to provide context (RAG).
+
+    This node runs before incident generation to provide the agent with
+    historical context from past similar incidents.
+    """
+    print("\n🔍 RAG: Searching for similar historical incidents...")
+
+    clusters = state.get("clusters", [])
+    if not clusters:
+        print("   ⚠️  No clusters to search for")
+        return {**state, "similar_incidents": []}
+
+    vector_repo = IncidentVectorRepository()
+
+    # Build a query from the current anomaly cluster
+    top_cluster = clusters[0]  # Use largest cluster
+
+    # Create a descriptive query text
+    sources = list(set(r.source for r in top_cluster if r.source))
+    is_flood = "flood" in sources
+    is_hydrology = "hydrology" in sources
+
+    values = [r.value for r in top_cluster]
+    max_value = max(values)
+    avg_value = sum(values) / len(values)
+
+    if is_flood:
+        query_text = (
+            f"Elevated river levels at {len(top_cluster)} stations. "
+            f"Peak: {max_value:.2f}m, Average: {avg_value:.2f}m. "
+            f"Flood risk assessment required."
+        )
+    elif is_hydrology:
+        query_text = (
+            f"Anomalous hydrology readings at {len(top_cluster)} stations. "
+            f"Peak: {max_value:.2f}, Average: {avg_value:.2f}. "
+            f"Groundwater or contamination investigation needed."
+        )
+    else:
+        query_text = (
+            f"{len(top_cluster)} monitoring stations showing elevated readings. "
+            f"Peak: {max_value:.2f}, Average: {avg_value:.2f}."
+        )
+
+    # Search for similar incidents
+    try:
+        similar = vector_repo.find_similar_incidents(
+            query_text=query_text,
+            limit=3,
+            similarity_threshold=0.6,  # Lower threshold for more results
+        )
+
+        if similar:
+            print(f"   → Found {len(similar)} similar historical incidents")
+
+            # Build context message for the agent
+            rag_context = "📚 Historical Context (RAG):\n\n"
+            rag_context += f"Found {len(similar)} similar past incidents:\n\n"
+
+            for i, sim in enumerate(similar, 1):
+                rag_context += (
+                    f"{i}. Similarity: {sim.similarity:.2%}\n"
+                    f"   Summary: {sim.summary[:200]}...\n"
+                    f"   Incident ID: {sim.incident_id}\n\n"
+                )
+
+            rag_context += (
+                "Use this historical context to:\n"
+                "- Identify patterns from past incidents\n"
+                "- Learn from previous resolutions\n"
+                "- Provide more informed recommendations\n"
+                "- Reference similar cases in your analysis\n"
+            )
+
+            return {
+                **state,
+                "similar_incidents": similar,
+                "messages": state["messages"] + [SystemMessage(content=rag_context)],
+            }
+        else:
+            print("   → No similar historical incidents found")
+            return {**state, "similar_incidents": []}
+
+    except Exception as e:
+        print(f"   ⚠️  Error during RAG search: {e}")
+        return {**state, "similar_incidents": []}
 
 
 async def generate_incident_node(state: AgentState) -> AgentState:
@@ -611,13 +707,32 @@ async def generate_incident_node(state: AgentState) -> AgentState:
             permits=permit_objects,
         )
         vector_repo.store_incident(incident)
+
+        # RAG: Search for similar historical incidents
+        print("      🔍 RAG: Searching for similar historical incidents...")
+        try:
+            similar = vector_repo.find_similar_to_incident(
+                incident,
+                limit=3,
+                similarity_threshold=0.7,
+            )
+            if similar:
+                print(f"      → Found {len(similar)} similar historical incidents")
+                for sim in similar:
+                    print(f"         • {sim.similarity:.2f}: {sim.summary[:60]}...")
+            else:
+                print("      → No similar historical incidents found (threshold: 0.7)")
+        except Exception as e:
+            print(f"      ⚠️  RAG search failed: {e}")
+            similar = []
+
         incidents.append(incident)
 
         print(f"      ✅ Incident {incident.id} created ({priority.value} priority)")
 
     # Create final summary message
     final_msg = AIMessage(
-        content=f"""✅ Localized incident analysis complete.
+        content=f"""✅ Localized incident analysis complete (with RAG enrichment).
 
 Generated {len(incidents)} incidents from {len(clusters)} spatial clusters:
 """
@@ -628,6 +743,7 @@ Generated {len(incidents)} incidents from {len(clusters)} spatial clusters:
                 for inc in incidents
             ]
         )
+        + "\n\nEach incident compared against historical data using vector similarity search."
         + "\n\nEnvironmental monitoring cycle complete. All incidents stored in database."
     )
 
@@ -691,19 +807,21 @@ def build_graph() -> Any:
     graph.add_node("tools", tool_node_with_extraction)  # Use async wrapper that extracts data
     graph.add_node("process_tools", process_tool_results)
     graph.add_node("detect_anomalies", detect_anomalies_node)
+    graph.add_node("enrich_with_rag", enrich_with_rag_node)  # RAG enrichment
     graph.add_node("generate_incident", generate_incident_node)
 
     # Add edges
     graph.add_edge(START, "start")
     graph.add_edge("start", "agent")
 
-    # Agent decides: call tools, analyze data, generate incident, or end
+    # Agent decides: call tools, analyze data, RAG search, generate incident, or end
     graph.add_conditional_edges(
         "agent",
         route_after_agent,
         {
             "tools": "tools",
             "detect_anomalies": "detect_anomalies",
+            "enrich_with_rag": "enrich_with_rag",
             "generate_incident": "generate_incident",
             "end": END,
         },
@@ -715,6 +833,9 @@ def build_graph() -> Any:
 
     # After detecting anomalies, return to agent for next decision
     graph.add_edge("detect_anomalies", "agent")
+
+    # After RAG enrichment, return to agent for decision
+    graph.add_edge("enrich_with_rag", "agent")
 
     # After generating incident, end
     graph.add_edge("generate_incident", END)

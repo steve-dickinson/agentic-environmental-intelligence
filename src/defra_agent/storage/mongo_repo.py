@@ -64,3 +64,68 @@ class IncidentRepository:
             alerts=alerts,
             permits=permits or [],
         )
+
+    def get_all_incidents(self, limit: int = 10) -> list[Incident]:
+        """Retrieve recent incidents from MongoDB.
+
+        Args:
+            limit: Maximum number of incidents to return
+
+        Returns:
+            List of Incident objects, most recent first
+        """
+        from datetime import datetime
+
+        docs = self._collection.find().sort("_id", -1).limit(limit)
+
+        incidents = []
+        for doc in docs:
+            # Reconstruct Reading objects
+            readings = [
+                Reading(
+                    station_id=r["station_id"],
+                    value=r["value"],
+                    source=r.get("source", "unknown"),
+                    timestamp=datetime.fromisoformat(r["timestamp"]),
+                    easting=r.get("easting"),
+                    northing=r.get("northing"),
+                    lat=r.get("lat"),
+                    lon=r.get("lon"),
+                )
+                for r in doc.get("readings", [])
+            ]
+
+            # Reconstruct Alert objects
+            alerts = [
+                Alert(
+                    summary=a["summary"],
+                    priority=a["priority"],
+                    suggested_actions=a.get("suggested_actions", []),
+                )
+                for a in doc.get("alerts", [])
+            ]
+
+            # Reconstruct Permit objects
+            permits = [
+                Permit(
+                    permit_id=p["permit_id"],
+                    operator_name=p["operator_name"],
+                    register_label=p.get("register_label"),
+                    registration_type=p.get("registration_type"),
+                    site_address=p.get("site_address", ""),
+                    site_postcode=p.get("site_postcode"),
+                    distance_km=p.get("distance_km"),
+                )
+                for p in doc.get("permits", [])
+            ]
+
+            incidents.append(
+                Incident(
+                    id=doc["_id"],
+                    readings=readings,
+                    alerts=alerts,
+                    permits=permits,
+                )
+            )
+
+        return incidents
