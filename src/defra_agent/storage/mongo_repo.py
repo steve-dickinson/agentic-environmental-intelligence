@@ -1,5 +1,6 @@
 import hashlib
 import json
+from datetime import UTC
 from typing import Any
 from uuid import uuid4
 
@@ -14,19 +15,51 @@ class IncidentRepository:
         self._client: MongoClient[dict[str, Any]] = MongoClient(settings.mongo_uri)
         self._db = self._client[settings.mongo_db]
         self._collection = self._db["incidents"]
-        # Create index on content_hash for duplicate detection
+        # Create indexes for duplicate detection and queries
         self._collection.create_index("content_hash", unique=False)
+        self._collection.create_index("created_at", unique=False)
+
+    def _normalize_station_id(self, station_id: str) -> str:
+        """Normalize station ID by extracting from URL if needed.
+
+        Handles cases where API might return:
+        - 'E72639' (plain ID)
+        - 'http://environment.data.gov.uk/flood-monitoring/id/stations/E72639' (URL)
+        - 'E72639-level-stage-i-15_min-mASD' (measure ID with station prefix)
+        """
+        if not station_id:
+            return ""
+
+        # If it's a URL, extract the last part
+        if "http" in station_id:
+            station_id = station_id.split("/")[-1]
+
+        # If it's a measure ID (has hyphens), take first part
+        if "-" in station_id:
+            station_id = station_id.split("-")[0]
+
+        return station_id.strip()
 
     def _generate_content_hash(self, readings: list[Reading], alerts: list[Alert]) -> str:
         """Generate a deterministic hash from incident content for deduplication.
 
-        Uses station IDs, timestamps, and alert summaries to identify duplicates.
+        Uses station IDs and data sources only - NOT timestamps since sensor readings
+        update continuously but represent the same ongoing incident.
         """
-        # Create a canonical representation
+        # Normalize all station IDs to handle URL vs plain ID inconsistencies
+        normalized_stations = sorted(
+            {
+                self._normalize_station_id(r.station_id)
+                for r in readings
+                if self._normalize_station_id(r.station_id)
+            }
+        )
+
+        # Create a canonical representation based on WHICH stations, not WHEN
         content = {
-            "stations": sorted(set(r.station_id for r in readings)),
-            "timestamps": sorted(set(r.timestamp.isoformat() for r in readings)),
-            "alert_summaries": sorted(a.summary for a in alerts),
+            "stations": normalized_stations,
+            "sources": sorted(set(r.source for r in readings)),
+            # Note: NOT including timestamps - same elevated stations = same incident
         }
 
         # Generate hash
@@ -49,12 +82,12 @@ class IncidentRepository:
         # Check if incident with same content already exists (within last 24 hours)
         from datetime import datetime, timedelta
 
-        cutoff = datetime.now() - timedelta(days=1)
+        cutoff = datetime.now(UTC) - timedelta(hours=24)
 
         existing = self._collection.find_one(
             {
                 "content_hash": content_hash,
-                "_id": {"$gt": cutoff.isoformat()[:10]},  # Rough filter by date in UUID
+                "created_at": {"$gte": cutoff},  # Proper datetime comparison
             }
         )
 
@@ -72,6 +105,7 @@ class IncidentRepository:
         doc = {
             "content_hash": content_hash,
             "_id": incident_id,
+            "created_at": datetime.now(UTC),  # Add proper timestamp
             "readings": [
                 {
                     "station_id": r.station_id,
