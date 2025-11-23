@@ -99,6 +99,8 @@ class EnvironmentalGraphRepository:
 
     def store_incident_graph(self, incident: Incident) -> None:
         """Store incident as a connected graph structure.
+        
+        Idempotent: Skips if incident already exists in graph.
 
         Creates:
         - Incident node with metadata
@@ -110,6 +112,16 @@ class EnvironmentalGraphRepository:
         Args:
             incident: Incident object to store in graph
         """
+        # Check if incident already exists
+        result = self._driver.execute_query(
+            "MATCH (i:Incident {incident_id: $incident_id}) RETURN count(i) as count",
+            incident_id=incident.id
+        )
+        
+        if result.records[0]["count"] > 0:
+            # Already stored, skip
+            return
+        
         with self._driver.session() as session:
             session.execute_write(self._create_incident_subgraph, incident)
 

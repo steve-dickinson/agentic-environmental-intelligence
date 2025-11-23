@@ -2,7 +2,35 @@
 
 > **⚠️ Disclaimer**: This is a proof of concept and personal project for learning and demonstration purposes. It is **not** in production use and is not affiliated with or endorsed by the UK Environment Agency or any government organisation. Data accuracy and reliability are not guaranteed.
 
-An agentic AI proof-of-concept that monitors environmental data from UK government APIs (DEFRA/Environment Agency), detects anomalies, generates intelligent alerts using LangGraph and OpenAI, and provides an interactive Streamlit dashboard for incident visualization.
+An agentic AI proof-of-concept that monitors environmental data from UK government APIs (DEFRA/Environment Agency), detects anomalies, generates intelligent alerts using LangGraph and OpenAI, and provides comprehensive analytics through RAG (Retrieval Augmented Generation) and Knowledge Graph approaches.
+
+## What's New: Phase 2 - RAG & Knowledge Graph 🆕
+
+This project now demonstrates **two complementary approaches** to environmental intelligence:
+
+### 🔍 RAG (Retrieval Augmented Generation)
+- **Vector similarity search** using pgvector and OpenAI embeddings
+- Find historically similar incidents based on semantic meaning
+- Answer queries like: *"Show me past floods with similar rainfall patterns"*
+- **Current Performance**: ~88% average similarity on historical matches
+
+### 🕸️ Knowledge Graph (Neo4j)
+- **Graph-based relationships** between incidents, stations, readings, and permits
+- Multi-hop queries: *"What permits are upstream of this flood event?"*
+- Structural pattern matching across connected environmental data
+- **77 nodes, 72 relationships** automatically built from agent runs
+
+### 🤖 Continuous Agent Operation
+- **Scheduled execution** every 2 hours via Docker
+- **Comprehensive run logging** tracking decisions, performance, and patterns
+- **Duplicate detection** with content-hash deduplication across all databases
+- **Agent analytics dashboard** showing trends, RAG effectiveness, and system health
+
+### 📊 Enhanced Streamlit Dashboard
+Three-page interactive interface:
+1. **📊 Incident Dashboard** - Map-based visualization with permits
+2. **🤖 Agent Runs** - Execution logs, trends, and performance analytics
+3. **🆚 RAG vs Knowledge Graph** - Side-by-side comparison for different query types
 
 ## TL;DR - Get Running in 5 Minutes
 
@@ -20,8 +48,8 @@ cp .env.example .env
 # 3. Install dependencies
 uv sync
 
-# 4. Start databases
-cd infra && docker compose up -d mongo postgres && cd ..
+# 4. Start databases (MongoDB, PostgreSQL, Neo4j)
+cd infra && docker compose up -d mongo postgres neo4j && cd ..
 
 # 5. Sync station metadata (required for coordinates)
 uv run python scripts/sync_stations.py
@@ -32,27 +60,37 @@ uv run defra-agent-run
 # 7. View the dashboard
 uv run streamlit run streamlit_app.py
 # Open http://localhost:8501 in your browser
+# Navigate between: Incident Dashboard | Agent Runs | RAG vs Knowledge Graph
+
+# 8. (Optional) Start scheduled agent for continuous operation
+cd infra && docker compose up -d agent && cd ..
 ```
 
 ## Features
 
 - 🤖 **Autonomous Agent**: LangGraph-powered agent that continuously monitors environmental sensors
-- 📊 **Interactive Dashboard**: Streamlit UI with map-based visualization of incidents, sensors, and permits
+- 🔍 **RAG Similarity Search**: Vector-based retrieval finding historically similar incidents (pgvector + OpenAI embeddings)
+- 🕸️ **Knowledge Graph**: Neo4j graph database tracking relationships between incidents, stations, readings, and permits
+- 📊 **Triple Dashboard**: Interactive Streamlit UI with incident maps, agent run analytics, and RAG vs Graph comparison
+- ⏰ **Scheduled Execution**: Docker-based continuous operation with 2-hour intervals and comprehensive logging
 - 🔌 **MCP Integration**: Dual approach with LangChain @tool decorators for agents + FastMCP server for external clients
-- 🌊 **Real-time Data**: Integrates Flood Monitoring, Hydrology, and Public Registers APIs
+- 🌊 **Real-time Data**: Integrates Flood Monitoring, Hydrology, Rainfall, and Public Registers APIs
 - 🚨 **Spatial & Temporal Clustering**: Groups anomalies by location (10km radius) and time (24 hours) for localized incident detection
-- 🧠 **Context-Aware Alerts**: Data-driven summaries that adapt to flood vs hydrology readings with relevant permit analysis
+- 🧠 **Context-Aware Alerts**: Data-driven summaries that adapt to flood vs hydrology readings with rainfall correlation
 - 🗺️ **Geospatial Intelligence**: Maps sensors and nearby environmental permits with color-coded priorities
-- 💾 **Persistent Storage**: MongoDB for incidents, PostgreSQL/pgvector for embeddings
+- 💾 **Triple Storage**: MongoDB (incidents), PostgreSQL/pgvector (embeddings), Neo4j (graph relationships)
+- 🔁 **Duplicate Prevention**: Content-hash deduplication across all three databases
 
 ## Key Highlights
 
 This project demonstrates:
 - **Agentic AI workflows** using LangGraph for autonomous environmental monitoring
-- **Multi-source data fusion** combining sensor readings with regulatory permit data
+- **RAG vs Knowledge Graph comparison** showing when each approach excels
+- **Multi-source data fusion** combining sensor readings with regulatory permit data and rainfall correlation
 - **Geospatial intelligence** visualizing environmental risks on interactive maps
-- **Production-ready patterns** including Docker deployment, MCP integration, and structured logging
+- **Production-ready patterns** including Docker deployment, scheduled execution, comprehensive logging, and duplicate detection
 - **UK Government API integration** showing how to work with real-world environmental data
+- **Continuous operation** with 2-hour intervals collecting historical data for analysis
 
 ## Quick Start
 
@@ -116,16 +154,16 @@ Before you begin, make sure you have:
    
    This will create a virtual environment and install all required packages including the project itself.
 
-5. **Start local databases** (MongoDB & PostgreSQL)
+5. **Start local databases** (MongoDB, PostgreSQL, Neo4j)
    ```bash
    cd infra
-   docker compose up -d mongo postgres
+   docker compose up -d mongo postgres neo4j
    cd ..
    ```
    
    **Note**: If you get a permission error, you may need to use `sudo`:
    ```bash
-   sudo docker compose up -d mongo postgres
+   sudo docker compose up -d mongo postgres neo4j
    ```
    
    Or add your user to the docker group (requires logout/login):
@@ -139,7 +177,7 @@ Before you begin, make sure you have:
    docker ps
    ```
    
-   You should see `mongo:7` and `pgvector/pgvector:pg16` containers running.
+   You should see `mongo:7`, `pgvector/pgvector:pg16`, and `neo4j:5.13` containers running.
 
 7. **Run the agent** (this creates your first incident)
    ```bash
@@ -236,28 +274,59 @@ Run the entire application stack (agent + databases) using Docker Compose:
 
 ## Architecture
 
-### Components
+### System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Streamlit Dashboard                        │
-│              (Interactive incident visualization)               │
-└────────────────────────────┬────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Streamlit Dashboard (3 Pages)                        │
+│  ┌──────────────┬────────────────────┬────────────────────────────┐   │
+│  │   Incident   │    Agent Runs      │  RAG vs Knowledge Graph    │   │
+│  │  Dashboard   │    Analytics       │      Comparison            │   │
+│  └──────────────┴────────────────────┴────────────────────────────┘   │
+└────────────────────────────┬────────────────────────────────────────────┘
                              │
-┌────────────────────────────┴────────────────────────────────────┐
-│                     LangGraph Agent                             │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  1. Fetch Readings → 2. Detect Anomalies →             │   │
-│  │  3. Generate Alerts → 4. Find Permits →                │   │
-│  │  5. Store Incidents                                     │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└───┬─────────────────┬──────────────────┬────────────────────────┘
-    │                 │                  │
-┌───▼──────┐  ┌───────▼──────┐  ┌────────▼────────┐
-│ MongoDB  │  │ PostgreSQL   │  │   MCP Server    │
-│(Incidents)│  │  (pgvector)  │  │  (EA API Tools) │
-└──────────┘  └──────────────┘  └─────────────────┘
+┌────────────────────────────┴─────────────────────────────────────────┐
+│                        LangGraph Agent                                │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │  1. Fetch Readings → 2. Detect Anomalies →                   │   │
+│  │  3. RAG Enrichment → 4. Generate Incidents →                 │   │
+│  │  5. Store to MongoDB + pgvector + Neo4j →                    │   │
+│  │  6. Log Run Metrics                                          │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+└───┬─────────────┬──────────────┬────────────────┬───────────────────┘
+    │             │              │                │
+┌───▼──────┐  ┌──▼───────┐  ┌───▼──────┐  ┌─────▼────────┐
+│ MongoDB  │  │PostgreSQL│  │  Neo4j   │  │  MCP Server  │
+│(Incidents│  │(pgvector)│  │ (Graph)  │  │ (EA API)     │
+│ + Logs)  │  │  (RAG)   │  │   (KG)   │  │              │
+└──────────┘  └──────────┘  └──────────┘  └──────────────┘
 ```
+
+### Data Storage Strategy
+
+**MongoDB**: Primary incident storage with content-hash deduplication
+- Incident documents with readings, alerts, permits
+- Agent run logs with execution metrics
+- Content-based duplicate detection
+
+**PostgreSQL + pgvector**: Vector embeddings for RAG
+- OpenAI embeddings of incident summaries
+- Cosine similarity search for historical pattern matching
+- ~88% average similarity on matches
+
+**Neo4j**: Knowledge Graph relationships
+- Incident → Reading → Station nodes
+- Incident → Permit relationships with distances
+- Graph queries for spatial/regulatory analysis
+
+### Agent Workflow Enhancement
+
+The agent now includes:
+1. **RAG Enrichment**: Searches for similar historical incidents before creating new ones
+2. **Triple Storage**: Automatically stores to MongoDB + pgvector + Neo4j
+3. **Duplicate Detection**: Content-hash based deduplication across all databases
+4. **Run Logging**: Comprehensive metrics tracking for analytics
+5. **Scheduled Execution**: Docker-based continuous operation (2-hour intervals)
 
 ### MCP Integration
 
@@ -401,22 +470,25 @@ uv run mypy src
 ```
 ├── src/defra_agent/
 │   ├── agent/          # LangGraph agent logic and workflow orchestration
-│   │   ├── graph.py          # Clustering-based detection with context-aware alerts
-│   │   └── main.py           # Agent entry point
+│   │   ├── graph.py          # RAG-enhanced clustering with Neo4j storage
+│   │   └── main.py           # Agent entry point with run logging
 │   ├── domain/         # Core models and business logic
-│   │   ├── models.py           # Reading, Alert, Incident data models
+│   │   ├── models.py           # Reading, Alert, Incident, AgentRunLog models
 │   │   ├── anomaly_detector.py # Z-score based anomaly detection
 │   │   └── clustering.py       # Spatial/temporal clustering (10km/24h)
 │   ├── services/       # Application services
 │   │   ├── incident_service.py # End-to-end incident creation workflow
-│   │   └── summariser.py       # Alert summarization (currently unused - using data-driven approach)
+│   │   └── summariser.py       # Alert summarization
 │   ├── storage/        # Persistence layer
-│   │   ├── mongo_repo.py       # Incident repository (MongoDB)
-│   │   ├── pgvector_repo.py    # Vector embeddings (PostgreSQL)
+│   │   ├── mongo_repo.py       # Incident repository with content-hash deduplication
+│   │   ├── pgvector_repo.py    # Vector embeddings for RAG similarity search
+│   │   ├── neo4j_repo.py       # Knowledge Graph repository (NEW)
+│   │   ├── run_log_repo.py     # Agent execution logging (NEW)
 │   │   └── station_repo.py     # Station metadata with coordinates
 │   ├── tools/          # API clients and MCP tools
 │   │   ├── flood_client.py         # Flood API with coordinate enrichment
 │   │   ├── hydrology_client.py     # Hydrology API with coordinate enrichment
+│   │   ├── rainfall_client.py      # Rainfall correlation analysis (NEW)
 │   │   ├── public_registers_client.py  # Permit search by coordinates
 │   │   └── mcp_tools.py            # LangChain @tool decorators for agent
 │   └── config.py       # Pydantic settings and environment configuration
@@ -425,13 +497,19 @@ uv run mypy src
 │   └── README.md         # MCP server documentation
 ├── docs/
 │   └── MCP_INTEGRATION.md  # MCP architecture and usage guide
+├── blog_posts/
+│   └── SCHEDULED_AGENT.md  # Scheduled execution documentation (NEW)
 ├── scripts/            # Development and test scripts
 │   ├── sync_stations.py        # Populate station metadata repository
 │   ├── run_agent.py            # Execute agent workflow
+│   ├── view_run_logs.py        # View agent execution statistics (NEW)
 │   └── test_*.py               # Various integration tests
 ├── tests/              # Unit tests
 ├── infra/              # Docker Compose and database initialization
-├── streamlit_app.py    # Interactive dashboard for incident visualization
+│   ├── docker-compose.yml      # Includes Neo4j and scheduled agent
+│   └── db-init/
+│       └── pgvector.sql        # PostgreSQL vector extension setup
+├── streamlit_app.py    # Triple-page dashboard (Incidents | Agent Runs | RAG vs KG)
 ├── main.py             # Simple entry point placeholder
 └── pyproject.toml      # Project configuration and dependencies
 ```
@@ -530,6 +608,9 @@ uv run python scripts/test_mcp_server.py
 
 # Sync monitoring stations to database
 uv run python scripts/sync_stations.py
+
+# View agent run logs and statistics
+uv run python scripts/view_run_logs.py
 ```
 
 ### Run MCP Server
@@ -542,18 +623,64 @@ uv run python mcp_servers/ea_env_server.py
 
 The Docker Compose setup (`infra/docker-compose.yml`) includes:
 
-- **mongo**: MongoDB 7 (port 27017) - stores incident documents
-- **postgres**: PostgreSQL 16 with pgvector extension (port 5432) - stores embeddings
-- **agent**: The Python agent application (optional containerized deployment)
+- **mongo**: MongoDB 7 (port 27017) - stores incident documents and agent run logs
+- **postgres**: PostgreSQL 16 with pgvector extension (port 5432) - stores vector embeddings for RAG
+- **neo4j**: Neo4j 5.13 (ports 7474 HTTP, 7687 Bolt) - knowledge graph with incident relationships
+- **agent**: The Python agent application with scheduled execution (runs every 2 hours)
 
-## Screenshots
+### Scheduled Agent Operation
 
-The Streamlit dashboard provides:
-- **Map View**: Sensors color-coded by alert priority with permit overlay
-- **Incident Metrics**: Reading count, alerts raised, permit count, highest priority
-- **Alert Details**: AI-generated summaries and recommended actions
-- **Regulatory Context**: Nearby permits categorized by type (waste, water quality, etc.)
-- **Data Tables**: Full incident, reading, and permit data for analysis
+The agent container runs continuously with:
+- **2-hour intervals** between executions (configurable via `RUN_INTERVAL_HOURS`)
+- **Auto-restart** on failure (`restart: unless-stopped`)
+- **Comprehensive logging** of each run with metrics
+- **Triple storage** to MongoDB + pgvector + Neo4j per incident
+
+Monitor the agent:
+```bash
+cd infra
+
+# View recent logs
+docker-compose logs --tail=50 agent
+
+# Follow live logs
+docker-compose logs -f agent
+
+# Check status
+docker-compose ps agent
+
+# Manual trigger (doesn't affect schedule)
+docker-compose exec agent uv run defra-agent-run
+
+# Stop scheduled execution
+docker-compose stop agent
+```
+
+## Dashboard Features
+
+The Streamlit dashboard (`streamlit_app.py`) provides three interactive pages:
+
+### 📊 Incident Dashboard
+- **Interactive Map**: Visualize sensor locations color-coded by alert priority (red=high, orange=medium, yellow=low)
+- **Permit Overlay**: Geocoded environmental permit holders displayed as purple markers
+- **Incident Selector**: Browse incidents sorted by priority with station IDs, coordinates, and timestamps
+- **Alert Analysis**: View data-driven summaries with specific values, thresholds, and context
+- **Regulatory Context**: See nearby permits categorized by type (flood risk, waste, discharge)
+- **Data Tables**: Detailed readings with coordinates, alerts with priorities, and permit information
+- **Map Tooltips**: Hover over markers to see station details, readings, and permit locations
+
+### 🤖 Agent Runs
+- **Summary Statistics**: Total runs, incidents created, duplicate rate, average duration over configurable time range
+- **Recent Runs Table**: Complete execution history with readings, clusters, incidents, RAG searches
+- **Trend Charts**: Incidents over time, performance metrics, duplicate detection rate
+- **RAG Performance**: Similarity scores and effectiveness metrics
+- **Run Details**: Deep dive into individual runs with cluster breakdowns, RAG results, incident IDs
+
+### 🆚 RAG vs Knowledge Graph
+- **RAG Tab**: Semantic similarity search across historical incidents with configurable threshold
+- **Knowledge Graph Tab**: Graph-based queries (upstream permits, structural similarity, statistics)
+- **Side-by-Side Comparison**: Understand when each approach excels
+- **Example Queries**: Pre-built queries demonstrating each system's strengths
 
 ## Troubleshooting
 
@@ -698,8 +825,9 @@ This is a personal exploration project. Use at your own discretion.
   - [Hydrology API](https://environment.data.gov.uk/hydrology/doc/reference)
   - [Public Registers API](https://environment.data.gov.uk/public-register)
 - **LangChain/LangGraph** for the agentic framework
-- **OpenAI** for LLM capabilities
+- **OpenAI** for LLM capabilities and embeddings
 - **Streamlit** for rapid dashboard development
+- **Neo4j** for graph database capabilities
 - **Postcodes.io** for UK postcode geocoding
 - **Model Context Protocol (MCP)** for structured tool interfaces
 
@@ -707,11 +835,12 @@ This is a personal exploration project. Use at your own discretion.
 
 - **Python 3.12+** with uv package manager
 - **LangGraph** - Agent workflow orchestration
-- **OpenAI GPT-4** - Natural language processing and analysis
-- **Streamlit** - Interactive data visualization dashboard
+- **OpenAI GPT-4 + Embeddings** - Natural language processing, analysis, and vector similarity
+- **Streamlit** - Interactive three-page data visualization dashboard
 - **PyDeck** - WebGL-powered geospatial visualizations
-- **MongoDB** - Document storage for incidents
-- **PostgreSQL + pgvector** - Vector embeddings storage
+- **MongoDB** - Document storage for incidents and agent run logs
+- **PostgreSQL + pgvector** - Vector embeddings storage for RAG
+- **Neo4j 5.13** - Knowledge Graph with APOC extensions
 - **MCP (Model Context Protocol)** - Structured API tool interfaces
-- **Docker Compose** - Multi-container orchestration
+- **Docker Compose** - Multi-container orchestration with scheduled execution
 - **Pydantic** - Data validation and settings management

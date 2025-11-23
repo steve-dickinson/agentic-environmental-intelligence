@@ -382,6 +382,22 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
 
+    # Page navigation
+    page = st.sidebar.radio(
+        "Navigation",
+        ["📊 Incident Dashboard", "🤖 Agent Runs", "🆚 RAG vs Knowledge Graph"],
+        label_visibility="collapsed"
+    )
+
+    if page == "📊 Incident Dashboard":
+        show_incident_dashboard()
+    elif page == "🤖 Agent Runs":
+        show_agent_runs()
+    else:
+        show_rag_vs_graph_comparison()
+
+
+def show_incident_dashboard() -> None:
     st.title("🌊 Defra Agentic Environmental Intelligence (POC)")
     st.caption(
         "Internal agent that fuses EA Flood & Hydrology sensors with Environment Agency "
@@ -666,186 +682,9 @@ def main() -> None:
         else:
             st.info("No nearby permits were linked to this incident.")
 
-    # ---------- RAG Query Testing ----------
-
-    st.markdown("---")
-    st.subheader("🔍 Test RAG Semantic Search")
-    st.caption(
-        "Try searching for incidents using natural language. "
-        "RAG uses vector embeddings to find semantically similar incidents, not just keyword matches."
-    )
-
-    with st.expander("ℹ️ How RAG works", expanded=False):
-        st.markdown("""
-        **RAG (Retrieval-Augmented Generation)** uses vector embeddings to find similar incidents:
-        
-        1. Your query is converted to a 1536-dimensional vector using OpenAI embeddings
-        2. We search the pgvector database for similar incident summaries using cosine similarity
-        3. Results are ranked by similarity score (0-1, where 1.0 is identical)
-        
-        **Try these example queries:**
-        - "Elevated river levels with no rainfall"
-        - "High water detected in Somerset area"
-        - "Groundwater contamination near industrial sites"
-        - "Flood risk with upstream discharge"
-        
-        **What makes RAG powerful:**
-        - Understands meaning, not just keywords
-        - "high water" matches "elevated levels" (semantically similar)
-        - Quantifies relevance with similarity scores
-        - Fast: ~0.2 seconds to search thousands of incidents
-        """)
-
-    # Pre-defined example queries
-    example_queries = [
-        "Elevated river levels with no recent rainfall",
-        "High water detected near Somerset Levels",
-        "Groundwater contamination risk",
-        "Flood risk with discharge permits nearby",
-        "Multiple stations showing anomalous readings",
-    ]
-
-    col1, col2 = st.columns([3, 1])
-
-    with col1:
-        query_input = st.text_input(
-            "Enter your query:",
-            value="Elevated river levels with no recent rainfall",
-            help="Describe what kind of incident you're looking for",
-        )
-
-    with col2:
-        st.markdown("<br>", unsafe_allow_html=True)  # Spacer
-        search_clicked = st.button("🔍 Search", type="primary", use_container_width=True)
-
-    # Example query buttons
-    st.markdown("**Quick examples:**")
-    cols = st.columns(5)
-    for idx, example in enumerate(example_queries):
-        if cols[idx % 5].button(
-            example[:30] + "...", key=f"example_{idx}", use_container_width=True
-        ):
-            query_input = example
-            search_clicked = True
-
-    if search_clicked or query_input:
-        try:
-            vector_repo = IncidentVectorRepository()
-
-            # Allow threshold adjustment
-            threshold = st.slider(
-                "Similarity threshold",
-                min_value=0.0,
-                max_value=1.0,
-                value=0.6,
-                step=0.05,
-                help="Minimum similarity score to include (0.0 = any match, 1.0 = exact match)",
-            )
-
-            with st.spinner("Searching vector database..."):
-                results = vector_repo.find_similar_incidents(
-                    query_text=query_input,
-                    limit=10,
-                    similarity_threshold=threshold,
-                )
-
-            if results:
-                st.success(f"Found {len(results)} similar incidents (threshold: {threshold:.0%})")
-
-                # Show results in a nice format
-                for i, result in enumerate(results, 1):
-                    # Determine color based on similarity
-                    if result.similarity >= 0.9:
-                        badge_color = "🟢"
-                        badge_text = "Very high"
-                    elif result.similarity >= 0.75:
-                        badge_color = "🟡"
-                        badge_text = "High"
-                    elif result.similarity >= 0.6:
-                        badge_color = "🟠"
-                        badge_text = "Medium"
-                    else:
-                        badge_color = "⚪"
-                        badge_text = "Low"
-
-                    with st.expander(
-                        f"{i}. {badge_color} {result.similarity:.1%} similarity ({badge_text}) - {result.summary[:100]}...",
-                        expanded=(i <= 3),  # Expand top 3 results
-                    ):
-                        st.markdown(f"**Incident ID:** `{result.incident_id}`")
-                        st.progress(result.similarity, text=f"Similarity: {result.similarity:.2%}")
-                        st.markdown(f"**Full Summary:**\n\n{result.summary}")
-
-                        # Try to get full incident details from MongoDB
-                        try:
-                            coll = get_incidents_collection()
-                            full_incident = coll.find_one({"_id": result.incident_id})
-
-                            if full_incident:
-                                incident_summary = compute_incident_summary(full_incident)
-
-                                st.markdown("---")
-                                st.markdown("**Incident Details:**")
-
-                                col_a, col_b, col_c = st.columns(3)
-                                col_a.metric("Readings", incident_summary["reading_count"])
-                                col_b.metric("Alerts", incident_summary["alert_count"])
-                                col_c.metric("Permits", incident_summary["permit_count"])
-
-                                if incident_summary["time"]:
-                                    st.caption(
-                                        f"Detected: {incident_summary['time'].strftime('%Y-%m-%d %H:%M')}"
-                                    )
-                        except Exception as e:
-                            st.caption(f"Could not load full incident details: {e}")
-
-                # Summary statistics
-                st.markdown("---")
-                st.markdown("**Search Statistics:**")
-                avg_sim = sum(r.similarity for r in results) / len(results)
-                max_sim = max(r.similarity for r in results)
-                min_sim = min(r.similarity for r in results)
-
-                stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
-                stat_col1.metric("Results", len(results))
-                stat_col2.metric("Avg Similarity", f"{avg_sim:.1%}")
-                stat_col3.metric("Best Match", f"{max_sim:.1%}")
-                stat_col4.metric("Worst Match", f"{min_sim:.1%}")
-
-            else:
-                st.info(
-                    f"No incidents found above {threshold:.0%} similarity threshold. "
-                    "Try lowering the threshold or using a different query."
-                )
-                st.markdown("**Suggestions:**")
-                st.markdown("- Lower the similarity threshold slider")
-                st.markdown(
-                    "- Use more general terms (e.g., 'elevated levels' instead of specific values)"
-                )
-                st.markdown("- Try different phrasing")
-
-        except Exception as e:
-            st.error(f"RAG search error: {e}")
-            st.caption("Make sure pgvector is running and incidents have been indexed.")
-
-    st.markdown("---")
-    st.info("""
-    **📊 Future Enhancement: Knowledge Graph Comparison (Phase 2)**
-    
-    In Phase 2, we'll add a Knowledge Graph query interface alongside this RAG search.
-    You'll be able to compare:
-    
-    - **RAG**: "Find similar incidents" (semantic similarity)
-    - **Graph**: "What caused this incident?" (causal reasoning)
-    
-    Example:
-    - RAG: "Elevated levels in Somerset" → finds similar events
-    - Graph: "Which permits caused elevated levels via upstream discharge?" → traces causality
-    
-    Stay tuned!
-    """)
-
     # ---------- Detailed tables ----------
+
+
 
     st.markdown("---")
     st.subheader("Detailed data")
@@ -868,6 +707,518 @@ def main() -> None:
             )
         else:
             st.info("No stored readings for this incident.")
+
+
+def show_rag_vs_graph_comparison() -> None:
+    """Interactive testing page for RAG vs Knowledge Graph queries."""
+    st.title("🆚 RAG vs Knowledge Graph Testing")
+    st.caption("Test and compare semantic search (RAG) with graph-based causal reasoning")
+
+    # Tabs for different testing modes
+    tab1, tab2 = st.tabs(["🔍 RAG Semantic Search", "🕸️ Knowledge Graph Queries"])
+
+    # ==================== RAG TAB ====================
+    with tab1:
+        st.markdown("### Test RAG Semantic Search")
+        st.caption(
+            "Search for incidents using natural language. "
+            "RAG uses vector embeddings to find semantically similar incidents."
+        )
+
+        # Example queries
+        example_queries = [
+            "Elevated river levels with no recent rainfall",
+            "High water detected near Somerset Levels",
+            "Groundwater contamination risk",
+            "Flood risk with discharge permits nearby",
+            "Multiple stations showing anomalous readings",
+        ]
+
+        col1, col2 = st.columns([3, 1])
+
+        with col1:
+            query_input = st.text_input(
+                "Enter your query:",
+                value="Elevated river levels with no recent rainfall",
+                help="Describe what kind of incident you're looking for",
+                key="rag_query_input"
+            )
+
+        with col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            search_clicked = st.button("🔍 Search", type="primary", use_container_width=True)
+
+        # Example query buttons
+        st.markdown("**Quick examples:**")
+        cols = st.columns(5)
+        for idx, example in enumerate(example_queries):
+            if cols[idx % 5].button(
+                example[:30] + "...", key=f"rag_example_{idx}", use_container_width=True
+            ):
+                query_input = example
+                search_clicked = True
+
+        # Search controls
+        col_threshold, col_limit = st.columns(2)
+        with col_threshold:
+            threshold = st.slider(
+                "Similarity threshold",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.6,
+                step=0.05,
+                help="Minimum similarity score (0.0 = any match, 1.0 = exact match)",
+                key="rag_threshold_main"
+            )
+        with col_limit:
+            limit = st.slider(
+                "Max results",
+                min_value=1,
+                max_value=20,
+                value=10,
+                key="rag_limit_main"
+            )
+
+        if search_clicked or query_input:
+            try:
+                vector_repo = IncidentVectorRepository()
+
+                with st.spinner("Searching vector database..."):
+                    results = vector_repo.find_similar_incidents(
+                        query_text=query_input,
+                        limit=limit,
+                        similarity_threshold=threshold,
+                    )
+
+                if results:
+                    st.success(f"✅ Found {len(results)} similar incidents")
+
+                    # Show results
+                    for i, result in enumerate(results, 1):
+                        # Color coding
+                        if result.similarity >= 0.9:
+                            badge_color = "🟢"
+                            badge_text = "Very high"
+                        elif result.similarity >= 0.75:
+                            badge_color = "🟡"
+                            badge_text = "High"
+                        elif result.similarity >= 0.6:
+                            badge_color = "🟠"
+                            badge_text = "Medium"
+                        else:
+                            badge_color = "⚪"
+                            badge_text = "Low"
+
+                        with st.expander(
+                            f"{i}. {badge_color} {result.similarity:.1%} ({badge_text}) - {result.summary[:80]}...",
+                            expanded=(i <= 3),
+                        ):
+                            st.markdown(f"**Incident ID:** `{result.incident_id}`")
+                            st.progress(result.similarity, text=f"Similarity: {result.similarity:.2%}")
+                            st.markdown(f"**Summary:**\n\n{result.summary}")
+
+                            # Get full details
+                            try:
+                                coll = get_incidents_collection()
+                                full_incident = coll.find_one({"_id": result.incident_id})
+
+                                if full_incident:
+                                    inc_summary = compute_incident_summary(full_incident)
+
+                                    st.markdown("---")
+                                    col_a, col_b, col_c = st.columns(3)
+                                    col_a.metric("Readings", inc_summary["reading_count"])
+                                    col_b.metric("Alerts", inc_summary["alert_count"])
+                                    col_c.metric("Permits", inc_summary["permit_count"])
+
+                                    if inc_summary["time"]:
+                                        st.caption(
+                                            f"Detected: {inc_summary['time'].strftime('%Y-%m-%d %H:%M')}"
+                                        )
+                            except Exception as e:
+                                st.caption(f"Could not load details: {e}")
+
+                    # Statistics
+                    st.markdown("---")
+                    st.markdown("**Search Statistics:**")
+                    avg_sim = sum(r.similarity for r in results) / len(results)
+                    max_sim = max(r.similarity for r in results)
+                    min_sim = min(r.similarity for r in results)
+
+                    stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+                    stat_col1.metric("Results", len(results))
+                    stat_col2.metric("Avg Similarity", f"{avg_sim:.1%}")
+                    stat_col3.metric("Best Match", f"{max_sim:.1%}")
+                    stat_col4.metric("Worst Match", f"{min_sim:.1%}")
+
+                else:
+                    st.info(f"No incidents above {threshold:.0%} threshold")
+                    st.markdown("**Try:** Lower threshold or use different query")
+
+            except Exception as e:
+                st.error(f"RAG error: {e}")
+                st.caption("Make sure pgvector is running and incidents are indexed")
+
+    # ==================== GRAPH TAB ====================
+    with tab2:
+        st.markdown("### Test Knowledge Graph Queries")
+        st.caption("Query the graph database for causal relationships and multi-hop connections")
+
+        # Check availability
+        try:
+            from defra_agent.storage.neo4j_repo import EnvironmentalGraphRepository
+            graph_available = True
+        except ImportError:
+            st.error("Neo4j driver not installed. Run: `uv pip install neo4j`")
+            return
+
+        # Load incidents
+        incidents = load_all_incidents()
+        if not incidents:
+            st.warning("No incidents found. Run the agent to generate test data.")
+            return
+
+        # Query setup
+        query_method = st.radio(
+            "Select query source:",
+            ["Use existing incident", "Custom incident ID"],
+            horizontal=True,
+            key="graph_method"
+        )
+
+        selected_incident = None
+        incident_id = None
+
+        if query_method == "Use existing incident":
+            options = build_incident_options(incidents)
+            selected_label = st.selectbox("Select incident:", options, key="graph_incident_select")
+            selected_index = options.index(selected_label)
+            selected_incident = incidents[selected_index]
+            incident_id = selected_incident.get("_id")
+        else:
+            incident_id = st.text_input("Enter incident ID:", key="graph_custom_id")
+
+        if not incident_id:
+            st.info("👆 Select an incident to query")
+            return
+
+        # Query controls
+        col_type, col_hops = st.columns(2)
+        with col_type:
+            query_type = st.selectbox(
+                "Query type:",
+                ["Upstream permits", "Similar incidents (structural)", "Graph statistics"],
+                key="graph_query_type_main"
+            )
+        with col_hops:
+            max_hops = st.slider(
+                "Max relationship hops:",
+                min_value=1,
+                max_value=5,
+                value=3,
+                key="graph_hops_main"
+            )
+
+        if st.button("🕸️ Run Query", type="primary", use_container_width=True):
+            with st.spinner("Querying knowledge graph..."):
+                try:
+                    graph_repo = EnvironmentalGraphRepository()
+
+                    if not graph_repo.verify_connection():
+                        st.error("⚠️ Neo4j not running. Start: `docker-compose up -d neo4j`")
+                        return
+
+                    if query_type == "Upstream permits":
+                        results = graph_repo.find_upstream_permits(incident_id, max_hops=max_hops)
+
+                        if results:
+                            st.success(f"✅ Found {len(results)} permits")
+                            for i, permit in enumerate(results, 1):
+                                hops_text = f"{permit['hops']} hops" if permit['hops'] > 0 else "nearby"
+                                with st.expander(f"{i}. {permit['operator']} ({hops_text})", expanded=(i==1)):
+                                    st.markdown(f"**Operator:** {permit['operator']}")
+                                    st.markdown(f"**Type:** {permit['permit_type']}")
+                                    st.markdown(f"**Distance:** {hops_text}")
+                                    if permit.get("path_nodes"):
+                                        st.markdown(f"**Path:** {' → '.join(permit['path_nodes'])}")
+                        else:
+                            st.info("No upstream permits found")
+
+                    elif query_type == "Similar incidents (structural)":
+                        results = graph_repo.find_similar_incidents_by_structure(incident_id)
+
+                        if results:
+                            st.success(f"✅ Found {len(results)} similar incidents")
+                            for i, inc in enumerate(results, 1):
+                                with st.expander(f"{i}. {inc.get('summary', 'N/A')[:60]}...", expanded=(i==1)):
+                                    st.markdown(f"**Summary:** {inc.get('summary', 'N/A')}")
+                                    st.markdown(f"**Priority:** {inc.get('priority', 'N/A')}")
+                                    st.markdown(f"**Stations:** {inc.get('station_count', 0)}")
+                        else:
+                            st.info("No structurally similar incidents")
+
+                    else:  # Statistics
+                        stats = graph_repo.get_incident_stats()
+                        nodes = stats.get("nodes", {})
+                        relationships = stats.get("relationships", {})
+
+                        st.success("✅ Graph Statistics")
+                        
+                        col_nodes, col_rels = st.columns(2)
+                        
+                        with col_nodes:
+                            st.markdown("**Nodes:**")
+                            if nodes:
+                                for node_type, count in nodes.items():
+                                    st.markdown(f"- {node_type}: {count}")
+                            else:
+                                st.caption("No nodes")
+
+                        with col_rels:
+                            st.markdown("**Relationships:**")
+                            if relationships:
+                                for rel_type, count in relationships.items():
+                                    st.markdown(f"- {rel_type}: {count}")
+                            else:
+                                st.caption("No relationships")
+
+                    graph_repo.close()
+
+                except Exception as e:
+                    st.error(f"Graph error: {e}")
+
+
+def show_agent_runs() -> None:
+    """Display agent run logs, statistics, and trends."""
+    from defra_agent.storage.run_log_repo import RunLogRepository
+    
+    st.title("🤖 Agent Run Logs & Analytics")
+    st.caption("Monitor agent execution history, performance metrics, and decision patterns")
+    
+    # Sidebar: time range selection
+    with st.sidebar:
+        st.header("Settings")
+        days = st.slider("Time range (days)", 1, 30, 7)
+        limit = st.slider("Show recent runs", 5, 50, 10)
+        
+        st.markdown("---")
+        if st.button("🔄 Refresh data"):
+            st.cache_data.clear()
+            st.rerun()
+    
+    repo = RunLogRepository()
+    
+    # Get statistics and recent runs
+    stats = repo.get_statistics(days=days)
+    recent_runs = repo.get_recent_runs(limit=limit)
+    
+    # Top-level metrics
+    st.subheader(f"📊 Summary (Last {days} Days)")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Runs", stats["total_runs"])
+    col2.metric("Incidents Created", stats["total_incidents_created"])
+    col3.metric("Duplicate Rate", f"{stats['duplicate_rate']:.1f}%")
+    col4.metric("Avg Duration", f"{stats['avg_duration']:.1f}s")
+    
+    col5, col6, col7, col8 = st.columns(4)
+    col5.metric("Total Clusters", stats["total_clusters"])
+    col6.metric("RAG Searches", stats["total_rag_searches"])
+    col7.metric("Incidents Skipped", stats["total_incidents_duplicate"])
+    
+    # Calculate incidents per run if we have runs
+    if stats["total_runs"] > 0:
+        incidents_per_run = stats["total_incidents_created"] / stats["total_runs"]
+        col8.metric("Incidents/Run", f"{incidents_per_run:.1f}")
+    else:
+        col8.metric("Incidents/Run", "N/A")
+    
+    st.markdown("---")
+    
+    # Tabs for different views
+    tab1, tab2, tab3 = st.tabs(["📋 Recent Runs", "📈 Trends", "🔍 Run Details"])
+    
+    with tab1:
+        st.subheader(f"Last {limit} Runs")
+        
+        if not recent_runs:
+            st.info("No agent runs found. The agent will create logs when it executes.")
+        else:
+            # Build DataFrame for table view
+            run_data = []
+            for run in recent_runs:
+                run_data.append({
+                    "Timestamp": pd.to_datetime(run["timestamp"]),
+                    "Run ID": run["run_id"][:8] + "...",
+                    "Duration (s)": run["duration_seconds"],
+                    "Readings": run["readings_fetched"],
+                    "Clusters": run["clusters_found"],
+                    "Created": run["incidents_created"],
+                    "Duplicates": run["incidents_duplicate"],
+                    "RAG Searches": run["rag_searches_performed"],
+                })
+            
+            df_runs = pd.DataFrame(run_data)
+            st.dataframe(
+                df_runs,
+                use_container_width=True,
+                hide_index=True,
+            )
+            
+            # Show RAG performance
+            st.markdown("#### 🔍 RAG Search Performance")
+            rag_data = []
+            for run in recent_runs:
+                for rag_result in run.get("rag_results", []):
+                    if rag_result.get("similar_incidents_found", 0) > 0:
+                        rag_data.append({
+                            "Timestamp": pd.to_datetime(run["timestamp"]),
+                            "Similar Found": rag_result["similar_incidents_found"],
+                            "Avg Similarity": rag_result.get("avg_similarity", 0) * 100,
+                            "Best Match": rag_result.get("best_similarity", 0) * 100,
+                        })
+            
+            if rag_data:
+                df_rag = pd.DataFrame(rag_data)
+                st.dataframe(
+                    df_rag.style.format({
+                        "Avg Similarity": "{:.1f}%",
+                        "Best Match": "{:.1f}%",
+                    }),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.info("No RAG searches performed yet")
+    
+    with tab2:
+        st.subheader("Trends Over Time")
+        
+        if len(recent_runs) < 2:
+            st.info("Need at least 2 runs to show trends")
+        else:
+            # Build time series DataFrames
+            ts_data = []
+            for run in reversed(recent_runs):  # Oldest first for plotting
+                ts_data.append({
+                    "Timestamp": pd.to_datetime(run["timestamp"]),
+                    "Incidents Created": run["incidents_created"],
+                    "Duplicates": run["incidents_duplicate"],
+                    "Clusters": run["clusters_found"],
+                    "Duration": run["duration_seconds"],
+                    "Readings": run["readings_fetched"],
+                })
+            
+            df_ts = pd.DataFrame(ts_data)
+            
+            # Chart 1: Incidents over time
+            st.markdown("#### Incident Creation")
+            st.line_chart(
+                df_ts.set_index("Timestamp")[["Incidents Created", "Duplicates"]],
+                use_container_width=True,
+            )
+            
+            # Chart 2: Performance metrics
+            st.markdown("#### Performance Metrics")
+            col_left, col_right = st.columns(2)
+            
+            with col_left:
+                st.line_chart(
+                    df_ts.set_index("Timestamp")[["Duration"]],
+                    use_container_width=True,
+                )
+            
+            with col_right:
+                st.line_chart(
+                    df_ts.set_index("Timestamp")[["Clusters"]],
+                    use_container_width=True,
+                )
+            
+            # Chart 3: Duplicate rate over time
+            st.markdown("#### Duplicate Detection Rate")
+            df_ts["Duplicate Rate (%)"] = (
+                df_ts["Duplicates"] / (df_ts["Incidents Created"] + df_ts["Duplicates"]) * 100
+            ).fillna(0)
+            st.line_chart(
+                df_ts.set_index("Timestamp")[["Duplicate Rate (%)"]],
+                use_container_width=True,
+            )
+    
+    with tab3:
+        st.subheader("Detailed Run Inspection")
+        
+        if not recent_runs:
+            st.info("No runs to inspect")
+        else:
+            # Select a run
+            run_options = [
+                f"{pd.to_datetime(r['timestamp']).strftime('%Y-%m-%d %H:%M')} - {r['run_id'][:8]}..."
+                for r in recent_runs
+            ]
+            selected = st.selectbox("Select a run", run_options)
+            selected_idx = run_options.index(selected)
+            run = recent_runs[selected_idx]
+            
+            # Show run details
+            st.markdown(f"**Run ID:** `{run['run_id']}`")
+            st.markdown(f"**Timestamp:** {pd.to_datetime(run['timestamp']).strftime('%Y-%m-%d %H:%M:%S')}")
+            st.markdown(f"**Duration:** {run['duration_seconds']:.2f}s")
+            
+            st.markdown("---")
+            
+            # Cluster details
+            st.markdown("#### 📍 Clusters Detected")
+            cluster_details = run.get("cluster_details", [])
+            if cluster_details:
+                for i, cluster in enumerate(cluster_details, 1):
+                    with st.expander(f"Cluster {i} - {cluster['station_count']} stations"):
+                        st.write(f"**Type:** {cluster['type']}")
+                        if cluster.get("center_lat") and cluster.get("center_lon"):
+                            st.write(f"**Center:** ({cluster['center_lat']:.4f}, {cluster['center_lon']:.4f})")
+                        st.write(f"**Stations:** {', '.join(cluster['station_ids'][:5])}")
+                        if len(cluster['station_ids']) > 5:
+                            st.caption(f"... and {len(cluster['station_ids']) - 5} more")
+            else:
+                st.info("No clusters in this run")
+            
+            # RAG results
+            st.markdown("#### 🔍 RAG Search Results")
+            rag_results = run.get("rag_results", [])
+            if rag_results:
+                for i, rag in enumerate(rag_results, 1):
+                    with st.expander(f"Search {i} - Found {rag['similar_incidents_found']} matches"):
+                        if rag.get("avg_similarity"):
+                            st.write(f"**Avg Similarity:** {rag['avg_similarity']*100:.1f}%")
+                        if rag.get("best_similarity"):
+                            st.write(f"**Best Match:** {rag['best_similarity']*100:.1f}%")
+                        if rag.get("similar_incident_ids"):
+                            st.write("**Incident IDs:**")
+                            for iid in rag["similar_incident_ids"][:3]:
+                                st.code(iid)
+            else:
+                st.info("No RAG searches in this run")
+            
+            # Incidents created
+            st.markdown("#### ✅ Incidents Created")
+            if run["incidents_created"] > 0:
+                st.write(f"**Created:** {run['incidents_created']}")
+                for iid in run["incident_ids_created"][:5]:
+                    st.code(iid)
+                if len(run["incident_ids_created"]) > 5:
+                    st.caption(f"... and {len(run['incident_ids_created']) - 5} more")
+            else:
+                st.info("No incidents created (all were duplicates)")
+            
+            if run["incidents_duplicate"] > 0:
+                st.write(f"**Duplicates Skipped:** {run['incidents_duplicate']}")
+            
+            # Errors
+            if run.get("errors"):
+                st.markdown("#### ⚠️ Errors")
+                for error in run["errors"]:
+                    st.error(error)
+    
+    repo.close()
 
 
 if __name__ == "__main__":

@@ -182,7 +182,8 @@ def route_after_agent(
         return "detect_anomalies"
 
     # If we have anomalies and clusters, but haven't done RAG search yet
-    if state["clusters"] and not state.get("similar_incidents"):
+    # Check if similar_incidents key exists at all (None means not searched yet)
+    if state["clusters"] and state.get("similar_incidents") is None:
         print("   📍 Routing to: enrich_with_rag")
         return "enrich_with_rag"
 
@@ -345,7 +346,7 @@ def detect_anomalies_node(state: AgentState) -> AgentState:
         "clusters": clusters,
         "current_cluster_index": 0,
         "incidents": [],
-        "similar_incidents": [],
+        "similar_incidents": None,  # Set to None initially, will be set by RAG node
         "messages": state["messages"] + [HumanMessage(content=anomaly_summary)],
     }
 
@@ -453,6 +454,24 @@ async def generate_incident_node(state: AgentState) -> AgentState:
 
     incident_repo = IncidentRepository()
     vector_repo = IncidentVectorRepository()
+    
+    # Import Neo4j repository for graph storage
+    from defra_agent.storage.neo4j_repo import EnvironmentalGraphRepository
+    
+    try:
+        graph_repo = EnvironmentalGraphRepository()
+        neo4j_available = graph_repo.verify_connection()
+        if neo4j_available:
+            print("   🕸️  Neo4j connected - will store incidents to graph")
+            graph_repo.initialize_schema()
+        else:
+            print("   ⚠️  Neo4j not available - skipping graph storage")
+            graph_repo = None
+    except Exception as e:
+        print(f"   ⚠️  Neo4j error: {e} - skipping graph storage")
+        graph_repo = None
+        neo4j_available = False
+    
     incidents = []
 
     # Import the public registers client for per-cluster permit search
@@ -707,6 +726,14 @@ async def generate_incident_node(state: AgentState) -> AgentState:
             permits=permit_objects,
         )
         vector_repo.store_incident(incident)
+        
+        # Store to Neo4j graph if available
+        if neo4j_available and graph_repo:
+            try:
+                graph_repo.store_incident_graph(incident)
+                print(f"      🕸️  Stored to Neo4j graph")
+            except Exception as e:
+                print(f"      ⚠️  Neo4j storage failed: {e}")
 
         # RAG: Search for similar historical incidents
         print("      🔍 RAG: Searching for similar historical incidents...")
@@ -746,6 +773,10 @@ Generated {len(incidents)} incidents from {len(clusters)} spatial clusters:
         + "\n\nEach incident compared against historical data using vector similarity search."
         + "\n\nEnvironmental monitoring cycle complete. All incidents stored in database."
     )
+    
+    # Close Neo4j connection
+    if graph_repo:
+        graph_repo.close()
 
     return {
         **state,

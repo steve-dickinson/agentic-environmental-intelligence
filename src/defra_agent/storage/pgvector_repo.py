@@ -45,6 +45,8 @@ class IncidentVectorRepository:
 
     def store_incident(self, incident: Incident) -> None:
         """Store incident alert summaries as embeddings in pgvector.
+        
+        Skips if incident already has embeddings to avoid duplicates.
 
         Args:
             incident: Incident with alerts to embed
@@ -52,17 +54,31 @@ class IncidentVectorRepository:
         if not incident.alerts:
             return
 
-        texts = [alert.summary for alert in incident.alerts]
-        vectors = self._embeddings.embed_documents(texts)
-
         conn = self._get_connection()
         cur = conn.cursor()
+        
+        # Check if this incident already has embeddings
+        cur.execute(
+            "SELECT COUNT(*) FROM incident_embeddings WHERE run_id = %s",
+            (incident.id,)
+        )
+        existing_count = cur.fetchone()[0]
+        
+        if existing_count > 0:
+            # Already indexed, skip
+            cur.close()
+            conn.close()
+            return
+
+        texts = [alert.summary for alert in incident.alerts]
+        vectors = self._embeddings.embed_documents(texts)
 
         for summary, embedding in zip(texts, vectors, strict=True):
             cur.execute(
                 """
                 INSERT INTO incident_embeddings (id, run_id, summary, embedding)
                 VALUES (%s, %s, %s, %s)
+                ON CONFLICT (id) DO NOTHING
                 """,
                 (str(uuid.uuid4()), incident.id, summary, embedding),
             )
