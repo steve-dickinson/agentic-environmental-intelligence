@@ -11,6 +11,10 @@ class Settings(BaseSettings):  # type: ignore[misc]
 
     pg_dsn: str = "dbname=defra user=defra password=defra host=postgres"
 
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = "defrapassword"
+
     openai_api_key: str | None = None
     openai_model: str = "gpt-4.1-mini"
 

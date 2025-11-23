@@ -17,6 +17,21 @@ services:
     volumes:
       - ./db-init/pgvector.sql:/docker-entrypoint-initdb.d/pgvector.sql
 
+  neo4j:
+    image: neo4j:5.13
+    restart: unless-stopped
+    ports:
+      - "7474:7474"  # HTTP Browser interface
+      - "7687:7687"  # Bolt protocol
+    environment:
+      NEO4J_AUTH: neo4j/defrapassword
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_memory_heap_max__size: 2G
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+
   agent:
     build:
       context: ..
@@ -35,3 +50,7 @@ services:
       context: ..
       dockerfile: infra/Dockerfile.mcp_ea_env
     restart: unless-stopped
+
+volumes:
+  neo4j_data:
+  neo4j_logs:

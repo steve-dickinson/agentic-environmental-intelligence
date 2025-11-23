@@ -24,6 +24,7 @@ dependencies = [
   "pymongo",
   "psycopg2-binary",
   "pgvector",
+  "neo4j>=5.13.0",
   "python-dotenv",
   "streamlit",
 ]
