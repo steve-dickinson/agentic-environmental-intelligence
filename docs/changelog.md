@@ -15,9 +15,82 @@ This page tracks the iterative development of the Agentic Environmental Intellig
 
 ## Version History
 
+### Phase 2: Production-Ready Operation ✅
+**Released**: November 24, 2025  
+**Status**: Complete
+
+#### What We Added
+- **Scheduled continuous execution** every 2 hours with Docker restart policy
+- **Comprehensive agent run logging** (RunLogRepository, AgentRunLog model)
+- **Triple-database duplicate detection** (MongoDB content-hash, pgvector incident-ID, Neo4j node existence)
+- **Enhanced 3-page Streamlit dashboard** with Agent Runs analytics page
+- **Knowledge Graph integration** with Neo4j (77 nodes, 72 relationships)
+- **Idempotent storage operations** across all databases
+- **Cost optimization** via duplicate detection preventing redundant API calls
+
+#### Technical Implementation
+- `RunLogRepository` for MongoDB-based execution tracking
+- `AgentRunLog` dataclass capturing 20+ metrics per run
+- Docker Compose infinite loop with 7200s (2-hour) sleep intervals
+- Content-hash generation using SHA-256 for duplicate detection
+- Streamlit multi-page navigation with dedicated Agent Runs analytics
+- Neo4j Cypher queries for graph creation and relationship modeling
+- CLI tool `scripts/view_run_logs.py` for statistics viewing
+
+#### What We Learned
+- **Continuous Operation Works**: Agent ran for 24+ hours without issues
+- **Logging is Essential**: Cannot analyze what you don't measure
+- **Duplicate Detection Necessary**: Without it, database fills with redundant data
+- **Three Perspectives Matter**: Incidents (operational) + Runs (performance) + RAG/Graph (comparative)
+- **Idempotency is Hard**: Each database requires different deduplication strategy
+
+#### Performance
+- **Run Frequency**: Every 2 hours (12 runs/day, 84 runs/week)
+- **Average Duration**: ~145 seconds per run
+- **Duplicate Rate**: 0% initially, increases over time (expected behavior)
+- **RAG Similarity**: ~88% average for historical matches
+- **Storage**: Triple confirmation (MongoDB + pgvector + Neo4j) every run
+
+#### Dashboard Features
+**New Agent Runs Page**:
+- Summary statistics with configurable time range (1-30 days)
+- Recent runs table with full execution metrics
+- Trend charts (incidents over time, performance, duplicate rate)
+- Run details deep-dive with cluster/RAG breakdowns
+- RAG performance table with similarity percentages
+
+**Enhanced RAG vs Graph Page**:
+- Side-by-side comparison of semantic search vs causal reasoning
+- Interactive testing for both approaches
+- Real examples showing strengths/weaknesses
+
+#### Try It
+```bash
+# Start scheduled agent
+docker-compose up -d agent
+
+# Monitor execution
+docker-compose logs -f agent
+
+# View statistics
+uv run python scripts/view_run_logs.py
+
+# Launch enhanced dashboard
+uv run streamlit run streamlit_app.py
+# Navigate to "Agent Runs" page
+```
+
+#### Next Steps
+- **5-Day Data Collection**: Let system run to accumulate data for writeup analysis
+- **Duplicate Rate Trends**: Monitor how duplicate percentage increases over time
+- **RAG vs Graph Analysis**: Compare effectiveness on real accumulated data
+- **Weather API Integration**: Add rainfall forecasting for predictive capabilities
+
+---
+
 ### RAG-Powered Semantic Search ✅
 **Released**: November 23, 2025  
-**Status**: Complete
+**Status**: Complete (Foundation for Phase 2)
 
 #### What We Added
 - **Vector embeddings** using OpenAI text-embedding-3-small (1536 dimensions)

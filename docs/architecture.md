@@ -13,22 +13,39 @@ title: Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Agentic Workflow (LangGraph)              │
+│              Scheduled Agentic Workflow (LangGraph)          │
 │  ┌────────┐    ┌──────────┐    ┌─────────────┐             │
 │  │ Agent  │───▶│  Tools   │───▶│  Analysis   │             │
 │  │  LLM   │    │ (MCP)    │    │  Pipeline   │             │
 │  └────────┘    └──────────┘    └─────────────┘             │
+│         │                │                    │              │
+│         │   Every 2 Hours (Docker Scheduler)  │              │
 └─────────────────────────────────────────────────────────────┘
          │                │                    │
          ▼                ▼                    ▼
-┌─────────────┐  ┌──────────────────┐  ┌──────────────┐
-│   OpenAI    │  │  EA Data APIs    │  │   Storage    │
-│   GPT-4     │  ├──────────────────┤  ├──────────────┤
-└─────────────┘  │ Flood Monitoring │  │   MongoDB    │
-                 │   Hydrology      │  │  PostgreSQL  │
-                 │   Rainfall       │  │  (pgvector)  │
-                 │ Public Registers │  └──────────────┘
-                 └──────────────────┘
+┌─────────────┐  ┌──────────────────┐  ┌──────────────────┐
+│   OpenAI    │  │  EA Data APIs    │  │ Triple Storage   │
+│   GPT-4     │  ├──────────────────┤  ├──────────────────┤
+└─────────────┘  │ Flood Monitoring │  │ MongoDB          │
+                 │   Hydrology      │  │ (Incidents +     │
+                 │   Rainfall       │  │  Agent Logs)     │
+                 │ Public Registers │  │                  │
+                 └──────────────────┘  │ PostgreSQL       │
+                                       │ (pgvector RAG)   │
+                                       │                  │
+                                       │ Neo4j            │
+                                       │ (Knowledge Graph)│
+                                       └──────────────────┘
+                                                │
+                                                ▼
+                                       ┌──────────────────┐
+                                       │ Streamlit        │
+                                       │ 3-Page Dashboard │
+                                       ├──────────────────┤
+                                       │ 1. Incidents     │
+                                       │ 2. Agent Runs    │
+                                       │ 3. RAG vs Graph  │
+                                       └──────────────────┘
 ```
 
 ## Agent Decision Flow
@@ -141,6 +158,8 @@ For Each Cluster:
 ```
 incidents
 ├─ _id (ObjectId)
+├─ incident_id (UUID, indexed)
+├─ content_hash (SHA-256, indexed) ← NEW: Duplicate detection
 ├─ created_at (datetime)
 ├─ readings (array)
 │   └─ {station_id, value, timestamp, source, coordinates}
@@ -148,6 +167,30 @@ incidents
 │   └─ {summary, priority, suggested_actions}
 └─ permits (array)
     └─ {permit_id, operator, type, distance}
+
+agent_run_logs ← NEW: Execution tracking
+├─ _id (ObjectId)
+├─ run_id (UUID, unique index)
+├─ timestamp (datetime, descending index)
+├─ duration_seconds (float)
+├─ stations_fetched (int)
+├─ readings_fetched (int)
+├─ flood_warnings_fetched (int)
+├─ clusters_found (int)
+├─ cluster_details (array)
+│   └─ {type, station_count, station_ids, center_lat, center_lon}
+├─ rag_searches_performed (int)
+├─ rag_results (array)
+│   └─ {similar_incidents_found, avg_similarity, best_similarity}
+├─ incidents_created (int, indexed)
+├─ incidents_duplicate (int)
+├─ incident_ids_created (array)
+├─ incident_ids_duplicate (array)
+├─ mongodb_stored (int)
+├─ pgvector_stored (int)
+├─ neo4j_stored (int)
+├─ errors (array)
+└─ openai_api_calls (int)
 
 station_metadata
 ├─ _id (composite: "source:station_id")
@@ -162,12 +205,79 @@ station_metadata
 ### PostgreSQL (pgvector)
 ```
 incident_embeddings
-├─ incident_id (UUID, FK to MongoDB)
+├─ id (UUID, primary key)
+├─ run_id (UUID) ← NEW: Track which run created this
 ├─ embedding (vector(1536))
 ├─ summary_text (text)
-└─ created_at (timestamp)
+├─ created_at (timestamp)
+└─ UNIQUE CONSTRAINT (id) ← NEW: Prevent duplicates
 
-Purpose: Semantic search and similarity analysis
+Indexes:
+├─ id (unique, for duplicate detection)
+└─ embedding (HNSW for cosine similarity search)
+
+Purpose: RAG semantic search and similarity analysis
+```
+
+### Neo4j Graph Database ← NEW
+```
+Nodes:
+├─ Incident
+│   └─ Properties: incident_id, summary, priority, timestamp
+├─ Station
+│   └─ Properties: station_id, label, lat, lon, source
+├─ Permit
+│   └─ Properties: permit_id, operator, type, distance
+└─ Location
+    └─ Properties: name, lat, lon
+
+Relationships:
+├─ (Incident)-[:MEASURED_AT]->(Station)
+├─ (Incident)-[:NEAR_PERMIT]->(Permit)
+├─ (Station)-[:IN_CATCHMENT]->(Location)
+└─ (Incident)-[:SIMILAR_TO]->(Incident)
+
+Current Stats: 77 nodes, 72 relationships
+Purpose: Causal reasoning and multi-hop queries
+```
+
+### Storage Flow with Duplicate Detection
+
+```
+New Incident Generated
+        │
+        ▼
+    MongoDB Check
+    ├─ Generate content_hash (SHA-256)
+    ├─ Query: existing incident with same hash?
+    ├─ Within 24h window?
+    │
+    ├─ YES: Return existing incident (skip storage)
+    │         Log: "ℹ️ Duplicate incident detected"
+    │
+    └─ NO: Continue to storage
+        │
+        ▼
+    PostgreSQL Check
+    ├─ Query: embeddings exist for incident_id?
+    │
+    ├─ YES: Skip embedding generation
+    │         (Saves OpenAI API call)
+    │
+    └─ NO: Generate embedding
+        │   Store to pgvector
+        │
+        ▼
+    Neo4j Check
+    ├─ Query: node exists for incident_id?
+    │
+    ├─ YES: Skip graph creation
+    │
+    └─ NO: Create incident node
+            Create station relationships
+            Link to permits
+            
+Result: Idempotent storage across all 3 databases
 ```
 
 ## MCP Tools Pattern
@@ -308,33 +418,120 @@ Cluster Analysis
 ## Deployment Architecture
 
 ```
-Development
+Development & Production (Docker Compose)
   │
-  ├─ Docker Compose
+  ├─ Core Infrastructure
   │   ├─ MongoDB (port 27017)
+  │   │   ├─ incidents collection
+  │   │   ├─ agent_run_logs collection
+  │   │   └─ station_metadata collection
+  │   │
   │   ├─ PostgreSQL (port 5432)
+  │   │   ├─ pgvector extension
+  │   │   └─ incident_embeddings table
+  │   │
+  │   ├─ Neo4j (port 7474, 7687)
+  │   │   ├─ Incident nodes
+  │   │   ├─ Station nodes
+  │   │   └─ Relationships
+  │   │
   │   └─ pgAdmin (port 5050)
   │
-  ├─ Python Virtual Env (uv)
-  │   └─ Dependencies
+  ├─ Scheduled Agent Execution ← NEW
+  │   ├─ Docker service: agent
+  │   ├─ Command: infinite loop with 7200s sleep
+  │   ├─ Restart policy: unless-stopped
+  │   ├─ Environment: RUN_INTERVAL_HOURS=2
+  │   └─ Runs: Every 2 hours continuously
   │
-  └─ Local Execution
-      ├─ Agent scripts
-      └─ Streamlit dashboard
+  ├─ Python Environment (uv)
+  │   ├─ Dependencies via pyproject.toml
+  │   └─ UV package manager
+  │
+  ├─ Execution Scripts
+  │   ├─ scripts/run_agent.py (single run)
+  │   ├─ scripts/view_run_logs.py (statistics)
+  │   └─ scripts/sync_stations.py (metadata)
+  │
+  └─ Streamlit Dashboard (port 8501)
+      ├─ Page 1: Incident Dashboard
+      ├─ Page 2: Agent Runs (analytics)
+      └─ Page 3: RAG vs Knowledge Graph
 
-Production (Future)
+Scheduled Execution Flow
   │
-  ├─ Cloud Infrastructure
-  │   ├─ MongoDB Atlas
-  │   ├─ Cloud SQL (PostgreSQL)
-  │   └─ Container hosting
+  ▼
+[Agent Container Starts]
   │
-  ├─ Scheduled Jobs
-  │   └─ Periodic monitoring cycles
+  └─ while true; do
+      │
+      ├─ Generate unique run_id (UUID)
+      ├─ Track start timestamp
+      │
+      ├─ Execute: uv run python scripts/run_agent.py
+      │   │
+      │   ├─ Fetch data from EA APIs
+      │   ├─ Detect anomalies
+      │   ├─ Cluster spatially
+      │   ├─ Search permits
+      │   ├─ Correlate rainfall
+      │   ├─ Generate incidents
+      │   ├─ RAG enrichment
+      │   ├─ Store to 3 databases (with duplicate detection)
+      │   └─ Build AgentRunLog
+      │
+      ├─ Save run log to MongoDB
+      │   └─ agent_run_logs collection
+      │
+      ├─ Print summary:
+      │   ⏱️ Duration: 145.3s
+      │   📊 Readings: 8,247
+      │   🗺️ Clusters: 3
+      │   📝 Incidents: 5 (2 new, 3 duplicate)
+      │   🔍 RAG: 2 searches (88% avg similarity)
+      │
+      ├─ sleep 7200 (2 hours)
+      │
+      └─ [Loop repeats]
+
+Monitoring Commands
+  │
+  ├─ docker-compose logs -f agent
+  │   └─ Real-time execution monitoring
+  │
+  ├─ uv run python scripts/view_run_logs.py
+  │   └─ Aggregate statistics (7-day default)
+  │
+  └─ uv run streamlit run streamlit_app.py
+      └─ Interactive dashboard with Agent Runs page
+```
+
+### Production Considerations (Future)
+
+```
+Current: Single Docker Host
+  │
+Future: Cloud Infrastructure
+  │
+  ├─ Managed Databases
+  │   ├─ MongoDB Atlas (incidents + logs)
+  │   ├─ Cloud SQL PostgreSQL (pgvector)
+  │   └─ Neo4j Aura (knowledge graph)
+  │
+  ├─ Container Orchestration
+  │   ├─ Kubernetes for agent scheduling
+  │   ├─ Horizontal scaling for parallel processing
+  │   └─ Service mesh for reliability
+  │
+  ├─ Observability
+  │   ├─ Prometheus metrics
+  │   ├─ Grafana dashboards
+  │   └─ Structured logging (ELK stack)
   │
   └─ API Gateway
-      ├─ REST API
-      └─ Webhook alerts
+      ├─ REST API for external access
+      ├─ Webhook alerts to stakeholders
+      └─ Authentication/authorization
 ```
 
 ## Performance Optimizations

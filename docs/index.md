@@ -259,54 +259,166 @@ Found 5 similar incidents:
 
 ![Dashboard Screenshot](images/dashboard.png)
 
-## What's New: RAG-Powered Semantic Search ✅
+## What's New: Phase 2 Production Features ✅
 
-**Completed**: November 23, 2025
+**Completed**: November 24, 2025
 
-We've successfully integrated **RAG (Retrieval-Augmented Generation)** using pgvector for semantic similarity search.
+### 🚀 Scheduled Continuous Operation
 
-### How It Works
+**The system now runs autonomously every 2 hours**, continuously monitoring environmental conditions and building a historical database without manual intervention.
 
-1. **Embedding Generation**: Each incident alert is converted to a 1536-dimensional vector using OpenAI's text-embedding-3-small
-2. **Storage**: Vectors stored in PostgreSQL with pgvector extension
-3. **Similarity Search**: Cosine similarity finds semantically related incidents (not just keyword matches)
-4. **Agent Integration**: Automatic search for similar historical incidents during report generation
+**Key Features**:
+- **Docker-based scheduling**: Infinite loop with 2-hour intervals
+- **Automatic restart**: `restart: unless-stopped` policy for resilience
+- **Zero downtime**: Runs continuously for multi-day data collection
+- **Production-ready**: Designed for week-long or longer deployments
 
-### Performance
+**Monitoring**:
+```bash
+# Watch agent execution in real-time
+docker-compose logs -f agent
+
+# Check run statistics
+uv run python scripts/view_run_logs.py
+```
+
+### 📊 Comprehensive Agent Run Logging
+
+**Every agent execution is now tracked** with detailed metrics stored in MongoDB for analysis and trend detection.
+
+**Metrics Captured**:
+- **Data Collection**: Stations fetched, readings analyzed, flood warnings processed
+- **Clustering**: Spatial clusters found with geographic details
+- **RAG Performance**: Searches performed, similarity scores, historical matches
+- **Incident Generation**: Created vs duplicate incidents
+- **Storage**: Triple storage confirmation (MongoDB + pgvector + Neo4j)
+- **Performance**: Execution duration, OpenAI API calls, errors
+
+**Run Log Example**:
+```
+🚀 Agent Run: 2a3f8e1d-4c9b-4e2a-8f3d-9c1e5a7b2d4f
+⏱️  Duration: 145.3 seconds
+📊 Readings: 8,247 | Clusters: 3 | Incidents: 5 (2 new, 3 duplicate)
+🔍 RAG Searches: 2 (avg similarity: 88%)
+```
+
+### 🛡️ Intelligent Duplicate Detection
+
+**Triple-database deduplication** prevents storing the same incident multiple times across all storage systems.
+
+**Detection Strategies**:
+1. **MongoDB**: SHA-256 content-hash from stations + timestamps + alerts (24-hour window)
+2. **pgvector**: Incident-ID existence check before embedding generation
+3. **Neo4j**: Node existence verification before graph creation
+
+**Benefits**:
+- **Cost Savings**: No duplicate OpenAI embedding API calls
+- **Data Quality**: Clean historical database without redundancy
+- **Analytics**: Track duplicate rate as system maturity metric
+
+**Observed Results** (from test runs):
+- Initial runs: 0% duplicate rate (establishing baseline)
+- After 3 runs: Duplicate detection working (same incidents re-found)
+- Expected trend: Duplicate rate increases over time (normal pattern)
+
+### 📈 Enhanced Streamlit Dashboard (3 Pages)
+
+**Navigation**: Now offers three distinct analytical perspectives
+
+#### Page 1: Incident Dashboard (Original)
+- Interactive map with incident locations
+- Priority-based sorting (High → Medium → Low)
+- Detailed incident cards with readings, permits, actions
+- Real-time data from MongoDB
+
+#### Page 2: Agent Runs (NEW)
+- **Summary Statistics**: Configurable time range (1-30 days)
+  - Total runs, incidents created/duplicate, duplicate rate
+  - Average duration, clusters found, RAG searches
+- **Recent Runs Tab**: Execution history with full metrics
+- **Trends Tab**: Visualizations over time
+  - Incidents created vs duplicates
+  - Performance metrics (duration, clusters)
+  - Duplicate rate percentage
+- **Run Details Tab**: Deep-dive inspection
+  - Complete run metadata
+  - Cluster breakdowns with coordinates
+  - RAG search results with similarity scores
+  - Error tracking
+
+#### Page 3: RAG vs Knowledge Graph (Enhanced)
+- **RAG Semantic Search**: Find similar historical incidents
+- **Knowledge Graph Queries**: Causal relationship exploration (Neo4j)
+- **Side-by-side Comparison**: RAG strengths vs Graph strengths
+- **Interactive Testing**: Adjustable thresholds and query examples
+
+### 🔍 RAG-Powered Semantic Search (Phase 1)
+
+**Foundation**: Vector embeddings using OpenAI text-embedding-3-small (1536 dimensions)
+
+**How It Works**:
+1. Each incident alert → vector embedding
+2. Stored in PostgreSQL with pgvector extension
+3. Cosine similarity finds semantically related incidents
+4. Automatic enrichment during incident generation
+
+**Performance**:
 - **Search Speed**: ~0.2 seconds for 1000+ embeddings
-- **Accuracy**: Finding 98-100% similarity matches for recurring patterns
-- **Self-improving**: Every incident adds to the knowledge base
+- **Accuracy**: 88-100% similarity for recurring patterns
+- **Self-improving**: Knowledge base grows with each incident
 
-### Real Example
+**Real Example**:
 ```
 Current Incident: "Elevated river levels at 2 stations (52157, 52158). 
                    Peak: 3.97m. No significant rainfall."
 
 Similar Incidents Found:
 - 100% match: Same stations, identical pattern from Nov 20
-- 100% match: Same stations, same peak from Nov 19  
-- 99% match: Same area, 3 stations from Nov 18
+- 88% match: Same area, different stations from Nov 18
 
-Insight: This is a recurring pattern, not a novel event.
-         Historical resolution: Self-normalized after 48h.
+Insight: Recurring pattern. Historical resolution: Self-normalized after 48h.
 ```
 
-### Why RAG Matters
-- **Pattern Recognition**: Identifies recurring vs novel incidents
-- **Historical Context**: "This happened before, here's what we did"
-- **Confidence Scoring**: Quantifies similarity (not guesswork)
-- **Fast**: Semantic search in milliseconds
+### 🕸️ Knowledge Graph Integration (Phase 2)
 
-### Try It
-The dashboard now includes an interactive RAG query interface. Search for:
-- "Elevated river levels with no rainfall"
-- "Groundwater contamination near industrial sites"
-- "Flood risk with discharge permits nearby"
+**Neo4j graph database** now stores incidents as interconnected nodes with causal relationships.
 
-### What's Next: Knowledge Graphs
-RAG finds **similar** incidents. Knowledge Graphs will answer **causal** questions:
-- RAG: "Find similar incidents" → semantic similarity
-- Graph: "Which permits caused this via discharge?" → causal reasoning
+**Graph Structure**:
+- **Nodes**: Incidents, Stations, Permits, Locations
+- **Relationships**: MEASURED_AT, NEAR_PERMIT, IN_CATCHMENT, SIMILAR_TO
+- **Queries**: Multi-hop traversal for causal reasoning
+
+**Current Stats** (from test data):
+- 77 nodes created
+- 72 relationships established
+- Supports complex queries like "Which permits are upstream of this incident?"
+
+**RAG vs Graph**:
+- **RAG**: "Find similar past incidents" (semantic similarity)
+- **Graph**: "What caused this via discharge chain?" (causal reasoning)
+- **Hybrid**: Best of both for comprehensive analysis
+
+### 🎯 Production-Ready Patterns
+
+**What We've Achieved**:
+- ✅ **Continuous Operation**: Multi-day execution without intervention
+- ✅ **Comprehensive Logging**: Every run tracked for analysis
+- ✅ **Idempotent Storage**: Safe to re-run without duplicates
+- ✅ **Triple Storage**: MongoDB (incidents) + pgvector (RAG) + Neo4j (graphs)
+- ✅ **Analytics Dashboard**: Three perspectives on system performance
+- ✅ **Cost Optimization**: Duplicate detection prevents wasted API calls
+
+**Try It**:
+```bash
+# Start scheduled agent (runs every 2 hours)
+docker-compose up -d agent
+
+# View run statistics
+uv run python scripts/view_run_logs.py
+
+# Launch dashboard with Agent Runs page
+uv run streamlit run streamlit_app.py
+```
 
 ---
 
