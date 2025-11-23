@@ -9,7 +9,6 @@ from defra_agent.config import settings
 
 
 class StationMetadataRepository:
-
     def __init__(self) -> None:
         client = MongoClient(settings.mongo_uri)
         db = client[settings.mongo_db]

@@ -124,9 +124,7 @@ async def main() -> None:
     print("\n🆚 Step 8: RAG vs Graph Comparison...")
     print("\n   RAG (Semantic Search):")
 
-    similar_rag = vector_repo.find_similar_to_incident(
-        incident, limit=3, similarity_threshold=0.6
-    )
+    similar_rag = vector_repo.find_similar_to_incident(incident, limit=3, similarity_threshold=0.6)
 
     if similar_rag:
         print(f"   ✅ Found {len(similar_rag)} semantically similar incidents")

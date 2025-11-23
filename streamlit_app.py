@@ -386,7 +386,7 @@ def main() -> None:
     page = st.sidebar.radio(
         "Navigation",
         ["📊 Incident Dashboard", "🤖 Agent Runs", "🆚 RAG vs Knowledge Graph"],
-        label_visibility="collapsed"
+        label_visibility="collapsed",
     )
 
     if page == "📊 Incident Dashboard":
@@ -684,8 +684,6 @@ def show_incident_dashboard() -> None:
 
     # ---------- Detailed tables ----------
 
-
-
     st.markdown("---")
     st.subheader("Detailed data")
 
@@ -741,7 +739,7 @@ def show_rag_vs_graph_comparison() -> None:
                 "Enter your query:",
                 value="Elevated river levels with no recent rainfall",
                 help="Describe what kind of incident you're looking for",
-                key="rag_query_input"
+                key="rag_query_input",
             )
 
         with col2:
@@ -768,15 +766,11 @@ def show_rag_vs_graph_comparison() -> None:
                 value=0.6,
                 step=0.05,
                 help="Minimum similarity score (0.0 = any match, 1.0 = exact match)",
-                key="rag_threshold_main"
+                key="rag_threshold_main",
             )
         with col_limit:
             limit = st.slider(
-                "Max results",
-                min_value=1,
-                max_value=20,
-                value=10,
-                key="rag_limit_main"
+                "Max results", min_value=1, max_value=20, value=10, key="rag_limit_main"
             )
 
         if search_clicked or query_input:
@@ -814,7 +808,9 @@ def show_rag_vs_graph_comparison() -> None:
                             expanded=(i <= 3),
                         ):
                             st.markdown(f"**Incident ID:** `{result.incident_id}`")
-                            st.progress(result.similarity, text=f"Similarity: {result.similarity:.2%}")
+                            st.progress(
+                                result.similarity, text=f"Similarity: {result.similarity:.2%}"
+                            )
                             st.markdown(f"**Summary:**\n\n{result.summary}")
 
                             # Get full details
@@ -867,6 +863,7 @@ def show_rag_vs_graph_comparison() -> None:
         # Check availability
         try:
             from defra_agent.storage.neo4j_repo import EnvironmentalGraphRepository
+
             graph_available = True
         except ImportError:
             st.error("Neo4j driver not installed. Run: `uv pip install neo4j`")
@@ -883,7 +880,7 @@ def show_rag_vs_graph_comparison() -> None:
             "Select query source:",
             ["Use existing incident", "Custom incident ID"],
             horizontal=True,
-            key="graph_method"
+            key="graph_method",
         )
 
         selected_incident = None
@@ -908,15 +905,11 @@ def show_rag_vs_graph_comparison() -> None:
             query_type = st.selectbox(
                 "Query type:",
                 ["Upstream permits", "Similar incidents (structural)", "Graph statistics"],
-                key="graph_query_type_main"
+                key="graph_query_type_main",
             )
         with col_hops:
             max_hops = st.slider(
-                "Max relationship hops:",
-                min_value=1,
-                max_value=5,
-                value=3,
-                key="graph_hops_main"
+                "Max relationship hops:", min_value=1, max_value=5, value=3, key="graph_hops_main"
             )
 
         if st.button("🕸️ Run Query", type="primary", use_container_width=True):
@@ -934,8 +927,12 @@ def show_rag_vs_graph_comparison() -> None:
                         if results:
                             st.success(f"✅ Found {len(results)} permits")
                             for i, permit in enumerate(results, 1):
-                                hops_text = f"{permit['hops']} hops" if permit['hops'] > 0 else "nearby"
-                                with st.expander(f"{i}. {permit['operator']} ({hops_text})", expanded=(i==1)):
+                                hops_text = (
+                                    f"{permit['hops']} hops" if permit["hops"] > 0 else "nearby"
+                                )
+                                with st.expander(
+                                    f"{i}. {permit['operator']} ({hops_text})", expanded=(i == 1)
+                                ):
                                     st.markdown(f"**Operator:** {permit['operator']}")
                                     st.markdown(f"**Type:** {permit['permit_type']}")
                                     st.markdown(f"**Distance:** {hops_text}")
@@ -950,7 +947,9 @@ def show_rag_vs_graph_comparison() -> None:
                         if results:
                             st.success(f"✅ Found {len(results)} similar incidents")
                             for i, inc in enumerate(results, 1):
-                                with st.expander(f"{i}. {inc.get('summary', 'N/A')[:60]}...", expanded=(i==1)):
+                                with st.expander(
+                                    f"{i}. {inc.get('summary', 'N/A')[:60]}...", expanded=(i == 1)
+                                ):
                                     st.markdown(f"**Summary:** {inc.get('summary', 'N/A')}")
                                     st.markdown(f"**Priority:** {inc.get('priority', 'N/A')}")
                                     st.markdown(f"**Stations:** {inc.get('station_count', 0)}")
@@ -963,9 +962,9 @@ def show_rag_vs_graph_comparison() -> None:
                         relationships = stats.get("relationships", {})
 
                         st.success("✅ Graph Statistics")
-                        
+
                         col_nodes, col_rels = st.columns(2)
-                        
+
                         with col_nodes:
                             st.markdown("**Nodes:**")
                             if nodes:
@@ -991,149 +990,157 @@ def show_rag_vs_graph_comparison() -> None:
 def show_agent_runs() -> None:
     """Display agent run logs, statistics, and trends."""
     from defra_agent.storage.run_log_repo import RunLogRepository
-    
+
     st.title("🤖 Agent Run Logs & Analytics")
     st.caption("Monitor agent execution history, performance metrics, and decision patterns")
-    
+
     # Sidebar: time range selection
     with st.sidebar:
         st.header("Settings")
         days = st.slider("Time range (days)", 1, 30, 7)
         limit = st.slider("Show recent runs", 5, 50, 10)
-        
+
         st.markdown("---")
         if st.button("🔄 Refresh data"):
             st.cache_data.clear()
             st.rerun()
-    
+
     repo = RunLogRepository()
-    
+
     # Get statistics and recent runs
     stats = repo.get_statistics(days=days)
     recent_runs = repo.get_recent_runs(limit=limit)
-    
+
     # Top-level metrics
     st.subheader(f"📊 Summary (Last {days} Days)")
-    
+
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Runs", stats["total_runs"])
     col2.metric("Incidents Created", stats["total_incidents_created"])
     col3.metric("Duplicate Rate", f"{stats['duplicate_rate']:.1f}%")
     col4.metric("Avg Duration", f"{stats['avg_duration']:.1f}s")
-    
+
     col5, col6, col7, col8 = st.columns(4)
     col5.metric("Total Clusters", stats["total_clusters"])
     col6.metric("RAG Searches", stats["total_rag_searches"])
     col7.metric("Incidents Skipped", stats["total_incidents_duplicate"])
-    
+
     # Calculate incidents per run if we have runs
     if stats["total_runs"] > 0:
         incidents_per_run = stats["total_incidents_created"] / stats["total_runs"]
         col8.metric("Incidents/Run", f"{incidents_per_run:.1f}")
     else:
         col8.metric("Incidents/Run", "N/A")
-    
+
     st.markdown("---")
-    
+
     # Tabs for different views
     tab1, tab2, tab3 = st.tabs(["📋 Recent Runs", "📈 Trends", "🔍 Run Details"])
-    
+
     with tab1:
         st.subheader(f"Last {limit} Runs")
-        
+
         if not recent_runs:
             st.info("No agent runs found. The agent will create logs when it executes.")
         else:
             # Build DataFrame for table view
             run_data = []
             for run in recent_runs:
-                run_data.append({
-                    "Timestamp": pd.to_datetime(run["timestamp"]),
-                    "Run ID": run["run_id"][:8] + "...",
-                    "Duration (s)": run["duration_seconds"],
-                    "Readings": run["readings_fetched"],
-                    "Clusters": run["clusters_found"],
-                    "Created": run["incidents_created"],
-                    "Duplicates": run["incidents_duplicate"],
-                    "RAG Searches": run["rag_searches_performed"],
-                })
-            
+                run_data.append(
+                    {
+                        "Timestamp": pd.to_datetime(run["timestamp"]),
+                        "Run ID": run["run_id"][:8] + "...",
+                        "Duration (s)": run["duration_seconds"],
+                        "Readings": run["readings_fetched"],
+                        "Clusters": run["clusters_found"],
+                        "Created": run["incidents_created"],
+                        "Duplicates": run["incidents_duplicate"],
+                        "RAG Searches": run["rag_searches_performed"],
+                    }
+                )
+
             df_runs = pd.DataFrame(run_data)
             st.dataframe(
                 df_runs,
                 use_container_width=True,
                 hide_index=True,
             )
-            
+
             # Show RAG performance
             st.markdown("#### 🔍 RAG Search Performance")
             rag_data = []
             for run in recent_runs:
                 for rag_result in run.get("rag_results", []):
                     if rag_result.get("similar_incidents_found", 0) > 0:
-                        rag_data.append({
-                            "Timestamp": pd.to_datetime(run["timestamp"]),
-                            "Similar Found": rag_result["similar_incidents_found"],
-                            "Avg Similarity": rag_result.get("avg_similarity", 0) * 100,
-                            "Best Match": rag_result.get("best_similarity", 0) * 100,
-                        })
-            
+                        rag_data.append(
+                            {
+                                "Timestamp": pd.to_datetime(run["timestamp"]),
+                                "Similar Found": rag_result["similar_incidents_found"],
+                                "Avg Similarity": rag_result.get("avg_similarity", 0) * 100,
+                                "Best Match": rag_result.get("best_similarity", 0) * 100,
+                            }
+                        )
+
             if rag_data:
                 df_rag = pd.DataFrame(rag_data)
                 st.dataframe(
-                    df_rag.style.format({
-                        "Avg Similarity": "{:.1f}%",
-                        "Best Match": "{:.1f}%",
-                    }),
+                    df_rag.style.format(
+                        {
+                            "Avg Similarity": "{:.1f}%",
+                            "Best Match": "{:.1f}%",
+                        }
+                    ),
                     use_container_width=True,
                     hide_index=True,
                 )
             else:
                 st.info("No RAG searches performed yet")
-    
+
     with tab2:
         st.subheader("Trends Over Time")
-        
+
         if len(recent_runs) < 2:
             st.info("Need at least 2 runs to show trends")
         else:
             # Build time series DataFrames
             ts_data = []
             for run in reversed(recent_runs):  # Oldest first for plotting
-                ts_data.append({
-                    "Timestamp": pd.to_datetime(run["timestamp"]),
-                    "Incidents Created": run["incidents_created"],
-                    "Duplicates": run["incidents_duplicate"],
-                    "Clusters": run["clusters_found"],
-                    "Duration": run["duration_seconds"],
-                    "Readings": run["readings_fetched"],
-                })
-            
+                ts_data.append(
+                    {
+                        "Timestamp": pd.to_datetime(run["timestamp"]),
+                        "Incidents Created": run["incidents_created"],
+                        "Duplicates": run["incidents_duplicate"],
+                        "Clusters": run["clusters_found"],
+                        "Duration": run["duration_seconds"],
+                        "Readings": run["readings_fetched"],
+                    }
+                )
+
             df_ts = pd.DataFrame(ts_data)
-            
+
             # Chart 1: Incidents over time
             st.markdown("#### Incident Creation")
             st.line_chart(
                 df_ts.set_index("Timestamp")[["Incidents Created", "Duplicates"]],
                 use_container_width=True,
             )
-            
+
             # Chart 2: Performance metrics
             st.markdown("#### Performance Metrics")
             col_left, col_right = st.columns(2)
-            
+
             with col_left:
                 st.line_chart(
                     df_ts.set_index("Timestamp")[["Duration"]],
                     use_container_width=True,
                 )
-            
+
             with col_right:
                 st.line_chart(
                     df_ts.set_index("Timestamp")[["Clusters"]],
                     use_container_width=True,
                 )
-            
+
             # Chart 3: Duplicate rate over time
             st.markdown("#### Duplicate Detection Rate")
             df_ts["Duplicate Rate (%)"] = (
@@ -1143,10 +1150,10 @@ def show_agent_runs() -> None:
                 df_ts.set_index("Timestamp")[["Duplicate Rate (%)"]],
                 use_container_width=True,
             )
-    
+
     with tab3:
         st.subheader("Detailed Run Inspection")
-        
+
         if not recent_runs:
             st.info("No runs to inspect")
         else:
@@ -1158,14 +1165,16 @@ def show_agent_runs() -> None:
             selected = st.selectbox("Select a run", run_options)
             selected_idx = run_options.index(selected)
             run = recent_runs[selected_idx]
-            
+
             # Show run details
             st.markdown(f"**Run ID:** `{run['run_id']}`")
-            st.markdown(f"**Timestamp:** {pd.to_datetime(run['timestamp']).strftime('%Y-%m-%d %H:%M:%S')}")
+            st.markdown(
+                f"**Timestamp:** {pd.to_datetime(run['timestamp']).strftime('%Y-%m-%d %H:%M:%S')}"
+            )
             st.markdown(f"**Duration:** {run['duration_seconds']:.2f}s")
-            
+
             st.markdown("---")
-            
+
             # Cluster details
             st.markdown("#### 📍 Clusters Detected")
             cluster_details = run.get("cluster_details", [])
@@ -1174,30 +1183,34 @@ def show_agent_runs() -> None:
                     with st.expander(f"Cluster {i} - {cluster['station_count']} stations"):
                         st.write(f"**Type:** {cluster['type']}")
                         if cluster.get("center_lat") and cluster.get("center_lon"):
-                            st.write(f"**Center:** ({cluster['center_lat']:.4f}, {cluster['center_lon']:.4f})")
+                            st.write(
+                                f"**Center:** ({cluster['center_lat']:.4f}, {cluster['center_lon']:.4f})"
+                            )
                         st.write(f"**Stations:** {', '.join(cluster['station_ids'][:5])}")
-                        if len(cluster['station_ids']) > 5:
+                        if len(cluster["station_ids"]) > 5:
                             st.caption(f"... and {len(cluster['station_ids']) - 5} more")
             else:
                 st.info("No clusters in this run")
-            
+
             # RAG results
             st.markdown("#### 🔍 RAG Search Results")
             rag_results = run.get("rag_results", [])
             if rag_results:
                 for i, rag in enumerate(rag_results, 1):
-                    with st.expander(f"Search {i} - Found {rag['similar_incidents_found']} matches"):
+                    with st.expander(
+                        f"Search {i} - Found {rag['similar_incidents_found']} matches"
+                    ):
                         if rag.get("avg_similarity"):
-                            st.write(f"**Avg Similarity:** {rag['avg_similarity']*100:.1f}%")
+                            st.write(f"**Avg Similarity:** {rag['avg_similarity'] * 100:.1f}%")
                         if rag.get("best_similarity"):
-                            st.write(f"**Best Match:** {rag['best_similarity']*100:.1f}%")
+                            st.write(f"**Best Match:** {rag['best_similarity'] * 100:.1f}%")
                         if rag.get("similar_incident_ids"):
                             st.write("**Incident IDs:**")
                             for iid in rag["similar_incident_ids"][:3]:
                                 st.code(iid)
             else:
                 st.info("No RAG searches in this run")
-            
+
             # Incidents created
             st.markdown("#### ✅ Incidents Created")
             if run["incidents_created"] > 0:
@@ -1208,16 +1221,16 @@ def show_agent_runs() -> None:
                     st.caption(f"... and {len(run['incident_ids_created']) - 5} more")
             else:
                 st.info("No incidents created (all were duplicates)")
-            
+
             if run["incidents_duplicate"] > 0:
                 st.write(f"**Duplicates Skipped:** {run['incidents_duplicate']}")
-            
+
             # Errors
             if run.get("errors"):
                 st.markdown("#### ⚠️ Errors")
                 for error in run["errors"]:
                     st.error(error)
-    
+
     repo.close()
 
 

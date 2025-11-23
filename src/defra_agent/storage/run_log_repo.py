@@ -28,12 +28,10 @@ class RunLogRepository:
         doc = {
             "run_id": log.run_id,
             "timestamp": log.timestamp,
-            
             # Data collection
             "stations_fetched": log.stations_fetched,
             "readings_fetched": log.readings_fetched,
             "flood_warnings_fetched": log.flood_warnings_fetched,
-            
             # Clustering
             "clusters_found": log.clusters_found,
             "cluster_details": [
@@ -46,7 +44,6 @@ class RunLogRepository:
                 }
                 for c in log.cluster_details
             ],
-            
             # RAG enrichment
             "rag_searches_performed": log.rag_searches_performed,
             "rag_results": [
@@ -58,24 +55,21 @@ class RunLogRepository:
                 }
                 for r in log.rag_results
             ],
-            
             # Incident creation
             "incidents_created": log.incidents_created,
             "incidents_duplicate": log.incidents_duplicate,
             "incident_ids_created": log.incident_ids_created,
             "incident_ids_duplicate": log.incident_ids_duplicate,
-            
             # Storage
             "mongodb_stored": log.mongodb_stored,
             "pgvector_stored": log.pgvector_stored,
             "neo4j_stored": log.neo4j_stored,
-            
             # Performance
             "duration_seconds": log.duration_seconds,
             "errors": log.errors,
             "openai_api_calls": log.openai_api_calls,
         }
-        
+
         self.collection.update_one(
             {"run_id": log.run_id},
             {"$set": doc},
@@ -94,9 +88,9 @@ class RunLogRepository:
     def get_statistics(self, days: int = 7) -> dict:
         """Get aggregate statistics over the last N days."""
         from datetime import timedelta
-        
+
         cutoff = datetime.now() - timedelta(days=days)
-        
+
         pipeline = [
             {"$match": {"timestamp": {"$gte": cutoff}}},
             {
@@ -111,9 +105,9 @@ class RunLogRepository:
                 }
             },
         ]
-        
+
         result = list(self.collection.aggregate(pipeline))
-        
+
         if not result:
             return {
                 "total_runs": 0,
@@ -124,12 +118,12 @@ class RunLogRepository:
                 "total_rag_searches": 0,
                 "duplicate_rate": 0,
             }
-        
+
         stats = result[0]
         total_created = stats["total_incidents_created"]
         total_dup = stats["total_incidents_duplicate"]
         total = total_created + total_dup
-        
+
         return {
             "total_runs": stats["total_runs"],
             "total_incidents_created": total_created,

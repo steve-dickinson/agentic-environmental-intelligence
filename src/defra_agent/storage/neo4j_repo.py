@@ -10,7 +10,7 @@ from typing import Any
 from neo4j import GraphDatabase, ManagedTransaction
 
 from defra_agent.config import settings
-from defra_agent.domain.models import Incident, Permit, Reading
+from defra_agent.domain.models import Incident
 
 
 class EnvironmentalGraphRepository:
@@ -81,25 +81,22 @@ class EnvironmentalGraphRepository:
             )
 
             session.run(
-                "CREATE INDEX incident_timestamp IF NOT EXISTS "
-                "FOR (i:Incident) ON (i.timestamp)"
+                "CREATE INDEX incident_timestamp IF NOT EXISTS FOR (i:Incident) ON (i.timestamp)"
             )
 
             session.run(
-                "CREATE INDEX reading_timestamp IF NOT EXISTS "
-                "FOR (r:Reading) ON (r.timestamp)"
+                "CREATE INDEX reading_timestamp IF NOT EXISTS FOR (r:Reading) ON (r.timestamp)"
             )
 
             session.run(
-                "CREATE INDEX incident_priority IF NOT EXISTS "
-                "FOR (i:Incident) ON (i.priority)"
+                "CREATE INDEX incident_priority IF NOT EXISTS FOR (i:Incident) ON (i.priority)"
             )
 
             print("✅ Neo4j schema initialized (constraints + indexes created)")
 
     def store_incident_graph(self, incident: Incident) -> None:
         """Store incident as a connected graph structure.
-        
+
         Idempotent: Skips if incident already exists in graph.
 
         Creates:
@@ -115,19 +112,17 @@ class EnvironmentalGraphRepository:
         # Check if incident already exists
         result = self._driver.execute_query(
             "MATCH (i:Incident {incident_id: $incident_id}) RETURN count(i) as count",
-            incident_id=incident.id
+            incident_id=incident.id,
         )
-        
+
         if result.records[0]["count"] > 0:
             # Already stored, skip
             return
-        
+
         with self._driver.session() as session:
             session.execute_write(self._create_incident_subgraph, incident)
 
-    def _create_incident_subgraph(
-        self, tx: ManagedTransaction, incident: Incident
-    ) -> None:
+    def _create_incident_subgraph(self, tx: ManagedTransaction, incident: Incident) -> None:
         """Transaction function to create incident subgraph.
 
         Args:
@@ -239,9 +234,7 @@ class EnvironmentalGraphRepository:
 
         print(f"✅ Stored incident {incident.id} in Neo4j graph")
 
-    def find_upstream_permits(
-        self, incident_id: str, max_hops: int = 3
-    ) -> list[dict[str, Any]]:
+    def find_upstream_permits(self, incident_id: str, max_hops: int = 3) -> list[dict[str, Any]]:
         """Find permits upstream of incident location using multi-hop queries.
 
         This demonstrates graph advantage: RAG cannot trace spatial relationships

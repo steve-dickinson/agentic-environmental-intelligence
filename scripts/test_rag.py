@@ -53,7 +53,7 @@ async def main() -> None:
     print(f"\n   ✅ Found {len(similar)} similar incidents:\n")
 
     for i, sim in enumerate(similar, 1):
-        print(f"   {i}. Similarity: {sim.similarity:.3f} ({sim.similarity*100:.1f}%)")
+        print(f"   {i}. Similarity: {sim.similarity:.3f} ({sim.similarity * 100:.1f}%)")
         print(f"      Incident ID: {sim.incident_id}")
         print(f"      Summary: {sim.summary[:80]}...")
         print()

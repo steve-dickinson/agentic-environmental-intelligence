@@ -12,7 +12,6 @@ from defra_agent.tools.public_registers_client import PublicRegistersClient
 
 
 class IncidentService:
-
     def __init__(
         self,
         flood_client: FloodClient,
@@ -31,11 +30,7 @@ class IncidentService:
 
     @staticmethod
     def _choose_anchor_reading(readings: list[Reading]) -> Reading | None:
-        candidates = [
-            r
-            for r in readings
-            if r.easting is not None and r.northing is not None
-        ]
+        candidates = [r for r in readings if r.easting is not None and r.northing is not None]
         if not candidates:
             return None
         return max(candidates, key=lambda r: r.value)
@@ -51,7 +46,6 @@ class IncidentService:
         return [anchor]
 
     async def run_detection_cycle(self) -> Incident | None:
-
         flood_readings = await self._flood_client.get_latest_readings()
         hydrology_readings = await self._hydrology_client.get_latest_readings()
 
@@ -87,4 +81,3 @@ class IncidentService:
         )
         self._vector_repo.store_incident(incident)
         return incident
-

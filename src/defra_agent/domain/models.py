@@ -38,6 +38,7 @@ class Permit:
     site_postcode: str | None = None
     distance_km: float | None = None
 
+
 @dataclass
 class Incident:
     id: str
@@ -49,6 +50,7 @@ class Incident:
 @dataclass
 class ClusterInfo:
     """Information about a spatial or anomaly cluster."""
+
     type: str  # "spatial" or "anomaly"
     station_count: int
     station_ids: list[str]
@@ -59,6 +61,7 @@ class ClusterInfo:
 @dataclass
 class RAGSearchResult:
     """Results from RAG similarity search."""
+
     similar_incidents_found: int
     avg_similarity: float | None = None
     best_similarity: float | None = None
@@ -68,36 +71,37 @@ class RAGSearchResult:
 @dataclass
 class AgentRunLog:
     """Complete log of an agent execution run."""
+
     run_id: str
     timestamp: datetime
-    
+
     # Data collection phase
     stations_fetched: int
     readings_fetched: int
     flood_warnings_fetched: int
-    
+
     # Clustering phase
     clusters_found: int
     cluster_details: list[ClusterInfo]
-    
+
     # RAG enrichment phase
     rag_searches_performed: int
     rag_results: list[RAGSearchResult]
-    
+
     # Incident creation phase
     incidents_created: int
     incidents_duplicate: int
     incident_ids_created: list[str]
     incident_ids_duplicate: list[str]
-    
+
     # Storage phase
     mongodb_stored: int
     pgvector_stored: int
     neo4j_stored: int
-    
+
     # Performance metrics
     duration_seconds: float
     errors: list[str] | None = None
-    
+
     # Optional metadata
     openai_api_calls: int | None = None

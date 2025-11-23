@@ -13,26 +13,26 @@ async def run_once_async() -> None:
     run_id = str(uuid.uuid4())
     start_time = time()
     timestamp = datetime.now()
-    
+
     print(f"\n🚀 Agent Run ID: {run_id}")
     print(f"   Timestamp: {timestamp.isoformat()}")
-    
+
     graph = build_graph()
     result = await graph.ainvoke({})
-    
+
     duration = time() - start_time
-    
+
     # Extract metrics from final state
     flood_readings = len(result.get("flood_readings", []))
     hydrology_readings = len(result.get("hydrology_readings", []))
-    
+
     clusters = result.get("clusters", [])
     cluster_details = []
     for cluster in clusters:
         # Calculate cluster center
         lats = [r.lat for r in cluster if r.lat]
         lons = [r.lon for r in cluster if r.lon]
-        
+
         cluster_details.append(
             ClusterInfo(
                 type="spatial",  # All clusters are spatial after anomaly detection
@@ -42,7 +42,7 @@ async def run_once_async() -> None:
                 center_lon=sum(lons) / len(lons) if lons else None,
             )
         )
-    
+
     # RAG search results (simplified - could enhance with per-incident tracking)
     similar_incidents = result.get("similar_incidents", [])
     rag_results = []
@@ -56,13 +56,13 @@ async def run_once_async() -> None:
                 similar_incident_ids=[s.incident_id for s in similar_incidents],
             )
         )
-    
+
     incidents = result.get("incidents", [])
-    
+
     # Track created vs duplicate (need to check logs or implement tracking)
     # For now, assume all are created (duplicate detection logs aren't captured yet)
     incident_ids_created = [inc.id for inc in incidents]
-    
+
     # Build run log
     run_log = AgentRunLog(
         run_id=run_id,
@@ -84,19 +84,19 @@ async def run_once_async() -> None:
         duration_seconds=round(duration, 2),
         errors=None,
     )
-    
+
     # Save to MongoDB
     log_repo = RunLogRepository()
     log_repo.save_run_log(run_log)
     log_repo.close()
-    
-    print(f"\n📊 Run Summary:")
+
+    print("\n📊 Run Summary:")
     print(f"   Duration: {duration:.2f}s")
     print(f"   Readings: {run_log.readings_fetched}")
     print(f"   Clusters: {run_log.clusters_found}")
     print(f"   Incidents: {run_log.incidents_created}")
     print(f"   RAG Searches: {run_log.rag_searches_performed}")
-    print(f"   ✅ Run log saved to database")
+    print("   ✅ Run log saved to database")
 
 
 def run_once() -> None:

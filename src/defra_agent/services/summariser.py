@@ -34,7 +34,9 @@ class AlertSummariser:
 
         self._llm = llm.with_structured_output(AlertsResponse)
 
-    async def summarise(self, anomalies: list[Reading], permits: list[Permit] | None = None) -> list[Alert]:
+    async def summarise(
+        self, anomalies: list[Reading], permits: list[Permit] | None = None
+    ) -> list[Alert]:
         if not anomalies:
             return []
 

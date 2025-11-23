@@ -10,7 +10,7 @@ print(f"\nLooking for stations: {test_ids}")
 for sid in test_ids:
     doc = repo.get_station("rainfall", sid)
     if doc:
-        print(f'  ✓ {sid}: Found - lat={doc.get("lat")}, lon={doc.get("lon")}')
+        print(f"  ✓ {sid}: Found - lat={doc.get('lat')}, lon={doc.get('lon')}")
     else:
         print(f"  ✗ {sid}: Not found")
 

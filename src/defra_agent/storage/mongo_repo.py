@@ -19,7 +19,7 @@ class IncidentRepository:
 
     def _generate_content_hash(self, readings: list[Reading], alerts: list[Alert]) -> str:
         """Generate a deterministic hash from incident content for deduplication.
-        
+
         Uses station IDs, timestamps, and alert summaries to identify duplicates.
         """
         # Create a canonical representation
@@ -28,7 +28,7 @@ class IncidentRepository:
             "timestamps": sorted(set(r.timestamp.isoformat() for r in readings)),
             "alert_summaries": sorted(a.summary for a in alerts),
         }
-        
+
         # Generate hash
         content_json = json.dumps(content, sort_keys=True)
         return hashlib.sha256(content_json.encode()).hexdigest()[:16]
@@ -40,21 +40,24 @@ class IncidentRepository:
         permits: list[Permit] | None = None,
     ) -> Incident:
         """Create an incident, avoiding duplicates based on content hash.
-        
+
         Returns existing incident if duplicate detected, otherwise creates new.
         """
         # Generate content hash for deduplication
         content_hash = self._generate_content_hash(readings, alerts)
-        
+
         # Check if incident with same content already exists (within last 24 hours)
         from datetime import datetime, timedelta
+
         cutoff = datetime.now() - timedelta(days=1)
-        
-        existing = self._collection.find_one({
-            "content_hash": content_hash,
-            "_id": {"$gt": cutoff.isoformat()[:10]}  # Rough filter by date in UUID
-        })
-        
+
+        existing = self._collection.find_one(
+            {
+                "content_hash": content_hash,
+                "_id": {"$gt": cutoff.isoformat()[:10]},  # Rough filter by date in UUID
+            }
+        )
+
         if existing:
             # Return existing incident
             print(f"   ℹ️  Duplicate incident detected (hash: {content_hash[:8]}...) - skipping")
@@ -64,7 +67,7 @@ class IncidentRepository:
                 alerts=alerts,
                 permits=permits or [],
             )
-        
+
         incident_id = str(uuid4())
         doc = {
             "content_hash": content_hash,
